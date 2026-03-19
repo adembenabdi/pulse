@@ -643,7 +643,7 @@ export default function FriendsPage() {
                   key={c}
                   onClick={() => setGroupForm(f => ({ ...f, color: c }))}
                   className={`w-8 h-8 rounded-full transition-all ${groupForm.color === c ? 'ring-2 ring-offset-2 ring-offset-[var(--background)] scale-110' : 'hover:scale-105'}`}
-                  style={{ backgroundColor: c, ringColor: c }}
+                  style={{ backgroundColor: c, outlineColor: c }}
                 />
               ))}
             </div>
