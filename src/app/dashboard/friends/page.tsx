@@ -33,12 +33,12 @@ interface FriendGroup {
 }
 
 const RELATIONSHIP_TYPES = [
-  'Friend', 'Classmate', 'Colleague', 'Family', 'Mentor', 'Acquaintance', 'Business', 'Other',
+  'Friend', 'Classmate', 'Colleague', 'Family', 'Mentor', 'Acquaintance', 'Business', 'Administratif', 'Prof', 'Other',
 ];
 
 const RELATIONSHIP_COLORS: Record<string, string> = {
   Friend: '#A855F7', Classmate: '#06B6D4', Colleague: '#34D399', Family: '#F97316',
-  Mentor: '#EC4899', Acquaintance: '#6366F1', Business: '#FBBF24', Other: '#94A3B8',
+  Mentor: '#EC4899', Acquaintance: '#6366F1', Business: '#FBBF24', Administratif: '#F87171', Prof: '#0EA5E9', Other: '#94A3B8',
 };
 
 const GROUP_COLORS = ['#A855F7', '#06B6D4', '#34D399', '#F97316', '#EC4899', '#6366F1', '#FBBF24', '#F87171'];
