@@ -35,9 +35,11 @@ export default function PrayerPage() {
   const today = format(new Date(), 'yyyy-MM-dd');
 
   const [logs, setLogs] = useState<PrayerLog[]>([]);
+  const [syncError, setSyncError] = useState(false);
 
   useEffect(() => {
     if (!user) return;
+    setSyncError(false);
     api.prayer.get(today).then((data) => {
       const mapped = (data as { prayer: string; completed: boolean; on_time?: boolean; time?: string; id?: string; date?: string }[]).map(d => ({
         id: d.id || '',
@@ -48,19 +50,20 @@ export default function PrayerPage() {
         time: d.time || '',
       }));
       setLogs(mapped);
-    }).catch(() => {});
+    }).catch(() => setSyncError(true));
   }, [user, today]);
 
   const togglePrayer = (prayerName: keyof PrayerTimes) => {
     if (!user) return;
     const existing = logs.find(l => l.prayer === prayerName);
-    const nowCompleted = !existing;
+    const isDone = existing?.completed ?? false;
+    const nowCompleted = !isDone;
     const timeStr = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' });
 
     // Optimistic UI update
     let updated: PrayerLog[];
     if (existing) {
-      updated = logs.filter(l => l.prayer !== prayerName);
+      updated = logs.map(l => l.prayer === prayerName ? { ...l, completed: nowCompleted, time: nowCompleted ? timeStr : '' } : l);
     } else {
       updated = [...logs, {
         id: '',
@@ -80,7 +83,7 @@ export default function PrayerPage() {
       completed: nowCompleted,
       on_time: nowCompleted,
       time: nowCompleted ? timeStr : '',
-    }).catch(() => {});
+    }).catch(() => setSyncError(true));
   };
 
   const completedCount = logs.filter(l => l.completed).length;
@@ -108,6 +111,12 @@ export default function PrayerPage() {
           </Button>
         </div>
       </PageHeader>
+
+      {syncError && (
+        <Card className="p-3 mb-4 border border-[var(--warning)]/30 bg-[var(--warning)]/5">
+          <p className="text-sm text-[var(--warning)] text-center">Could not sync prayers — changes may not be saved</p>
+        </Card>
+      )}
 
       {loading ? (
         <div className="flex items-center justify-center py-20">

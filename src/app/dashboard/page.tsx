@@ -114,7 +114,7 @@ export default function DashboardPage() {
         promises.push(
           api.prayer.get(today).then((data: Record<string, unknown>[]) => {
             setPrayersDone((data as { completed?: boolean }[]).filter(l => l.completed).length);
-          }).catch(() => {})
+          }).catch((err) => console.error('Dashboard prayer load failed:', err))
         );
       }
 
