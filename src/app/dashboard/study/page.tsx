@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/context/AuthContext';
 import { Card, Badge, Button, PageHeader, Input, Label, Select, Modal, Tabs, EmptyState } from '@/components/ui/primitives';
-import { GraduationCap, Plus, Clock, MapPin, User, Calendar, Trash2, Link, ExternalLink, BookOpen, RefreshCw } from 'lucide-react';
+import { GraduationCap, Plus, Clock, MapPin, User, Calendar, Trash2, Link, ExternalLink, BookOpen, RefreshCw, Timer, Play, Pause, Square, RotateCcw } from 'lucide-react';
 import { api } from '@/lib/api';
 import type { Course, StudySession } from '@/types';
 import { format } from 'date-fns';
@@ -61,6 +61,18 @@ export default function StudyPage() {
     courseId: '', duration: 60, topic: '', notes: '',
   });
 
+  // Pomodoro state
+  const [pomodoroActive, setPomodoroActive] = useState(false);
+  const [pomodoroId, setPomodoroId] = useState<string | null>(null);
+  const [pomoDuration, setPomoDuration] = useState(25); // minutes
+  const [pomoBreak, setPomoBreak] = useState(5);
+  const [pomoLabel, setPomoLabel] = useState('');
+  const [pomoTimeLeft, setPomoTimeLeft] = useState(25 * 60); // seconds
+  const [pomoPaused, setPomoPaused] = useState(false);
+  const [pomoIsBreak, setPomoIsBreak] = useState(false);
+  const [pomoStats, setPomoStats] = useState({ today: 0, total: 0, totalMinutes: 0 });
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   const fetchCourses = useCallback(async () => {
     try {
       const data = await api.study.courses.get();
@@ -84,6 +96,79 @@ export default function StudyPage() {
     setLoading(true);
     Promise.all([fetchCourses(), fetchSessions()]).finally(() => setLoading(false));
   }, [user, fetchCourses, fetchSessions]);
+
+  // Load pomodoro stats
+  useEffect(() => {
+    if (!user) return;
+    api.pomodoro.stats().then(data => {
+      const d = data as { today_sessions?: number; total_sessions?: number; total_minutes?: number };
+      setPomoStats({
+        today: d.today_sessions || 0,
+        total: d.total_sessions || 0,
+        totalMinutes: d.total_minutes || 0,
+      });
+    }).catch(() => {});
+  }, [user, pomodoroActive]);
+
+  // Timer countdown
+  useEffect(() => {
+    if (pomodoroActive && !pomoPaused && pomoTimeLeft > 0) {
+      timerRef.current = setInterval(() => {
+        setPomoTimeLeft(t => t - 1);
+      }, 1000);
+      return () => { if (timerRef.current) clearInterval(timerRef.current); };
+    }
+    if (pomoTimeLeft === 0 && pomodoroActive) {
+      // Timer finished
+      if (!pomoIsBreak && pomodoroId) {
+        api.pomodoro.complete(pomodoroId).catch(() => {});
+        setPomodoroId(null);
+        // Start break
+        setPomoIsBreak(true);
+        setPomoTimeLeft(pomoBreak * 60);
+      } else {
+        // Break finished
+        setPomodoroActive(false);
+        setPomoIsBreak(false);
+        setPomoTimeLeft(pomoDuration * 60);
+      }
+    }
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [pomodoroActive, pomoPaused, pomoTimeLeft, pomoIsBreak, pomodoroId, pomoBreak, pomoDuration]);
+
+  const startPomodoro = async (label?: string, sessionId?: string) => {
+    try {
+      const result = await api.pomodoro.start({
+        duration: pomoDuration,
+        break_duration: pomoBreak,
+        study_session_id: sessionId,
+        label: label || pomoLabel || undefined,
+      }) as { id: string };
+      setPomodoroId(result.id);
+      setPomodoroActive(true);
+      setPomoPaused(false);
+      setPomoIsBreak(false);
+      setPomoTimeLeft(pomoDuration * 60);
+      if (label) setPomoLabel(label);
+    } catch { /* silent */ }
+  };
+
+  const cancelPomodoro = async () => {
+    if (pomodoroId) {
+      await api.pomodoro.cancel(pomodoroId).catch(() => {});
+    }
+    setPomodoroActive(false);
+    setPomodoroId(null);
+    setPomoPaused(false);
+    setPomoIsBreak(false);
+    setPomoTimeLeft(pomoDuration * 60);
+  };
+
+  const formatTime = (seconds: number) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  };
 
   const handleSync = async () => {
     setSyncing(true);
@@ -221,6 +306,7 @@ export default function StudyPage() {
           { id: 'schedule', label: 'Schedule', icon: <Calendar className="w-4 h-4" /> },
           { id: 'courses', label: 'Modules', icon: <GraduationCap className="w-4 h-4" />, count: moduleNames.length },
           { id: 'sessions', label: 'Study Log', icon: <BookOpen className="w-4 h-4" />, count: sessions.length },
+          { id: 'pomodoro', label: 'Focus Timer', icon: <Timer className="w-4 h-4" /> },
         ]}
         active={tab}
         onChange={setTab}
@@ -387,13 +473,102 @@ export default function StudyPage() {
                           <p className="text-xs text-[var(--foreground-muted)]">{session.date} • {session.duration} min</p>
                         </div>
                       </div>
+                    <div className="flex items-center gap-2">
                       <Badge variant="success">{session.duration}m</Badge>
+                      <Button variant="ghost" size="icon" onClick={() => startPomodoro(displayName, session.id)}>
+                        <Timer className="w-3.5 h-3.5 text-[var(--primary)]" />
+                      </Button>
+                    </div>
                     </div>
                   </Card>
                 </motion.div>
               );
             })
           )}
+        </div>
+      )}
+
+      {tab === 'pomodoro' && (
+        <div className="space-y-4">
+          {/* Timer display */}
+          <Card variant="elevated" className="p-8 text-center relative overflow-hidden">
+            <div className="absolute inset-0 opacity-5">
+              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 rounded-full bg-[var(--primary)] blur-3xl" />
+            </div>
+            <div className="relative">
+              {pomoIsBreak && (
+                <Badge variant="success" className="mb-3">Break Time</Badge>
+              )}
+              <p className="text-6xl sm:text-8xl font-bold text-[var(--foreground)] font-mono tracking-wider mb-2">
+                {formatTime(pomoTimeLeft)}
+              </p>
+              <p className="text-sm text-[var(--foreground-muted)] mb-6">
+                {pomodoroActive
+                  ? pomoIsBreak ? 'Take a break!' : (pomoLabel || 'Focus session')
+                  : `${pomoDuration} min focus / ${pomoBreak} min break`}
+              </p>
+
+              {!pomodoroActive ? (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-center gap-3">
+                    <div>
+                      <label className="text-xs text-[var(--foreground-muted)]">Focus</label>
+                      <Input type="number" className="w-20 text-center" value={pomoDuration} onChange={e => { const v = parseInt(e.target.value) || 25; setPomoDuration(v); setPomoTimeLeft(v * 60); }} />
+                    </div>
+                    <div>
+                      <label className="text-xs text-[var(--foreground-muted)]">Break</label>
+                      <Input type="number" className="w-20 text-center" value={pomoBreak} onChange={e => setPomoBreak(parseInt(e.target.value) || 5)} />
+                    </div>
+                  </div>
+                  <Input placeholder="What are you working on?" value={pomoLabel} onChange={e => setPomoLabel(e.target.value)} className="max-w-sm mx-auto" />
+                  <Button size="lg" onClick={() => startPomodoro()}>
+                    <Play className="w-5 h-5" /> Start Focus
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex items-center justify-center gap-3">
+                  <Button variant="secondary" size="lg" onClick={() => setPomoPaused(!pomoPaused)}>
+                    {pomoPaused ? <Play className="w-5 h-5" /> : <Pause className="w-5 h-5" />}
+                    {pomoPaused ? 'Resume' : 'Pause'}
+                  </Button>
+                  <Button variant="danger" size="lg" onClick={cancelPomodoro}>
+                    <Square className="w-5 h-5" /> Cancel
+                  </Button>
+                </div>
+              )}
+            </div>
+          </Card>
+
+          {/* Quick presets */}
+          {!pomodoroActive && (
+            <div className="flex flex-wrap gap-2 justify-center">
+              {[
+                { label: '25/5', focus: 25, br: 5 },
+                { label: '50/10', focus: 50, br: 10 },
+                { label: '90/15', focus: 90, br: 15 },
+              ].map(p => (
+                <Button key={p.label} variant="secondary" size="sm" onClick={() => { setPomoDuration(p.focus); setPomoBreak(p.br); setPomoTimeLeft(p.focus * 60); }}>
+                  <Timer className="w-3 h-3" /> {p.label}
+                </Button>
+              ))}
+            </div>
+          )}
+
+          {/* Stats */}
+          <div className="grid grid-cols-3 gap-3">
+            <Card variant="default" className="p-3 text-center">
+              <p className="text-lg font-bold text-[var(--foreground)]">{pomoStats.today}</p>
+              <p className="text-[10px] text-[var(--foreground-muted)]">Today</p>
+            </Card>
+            <Card variant="default" className="p-3 text-center">
+              <p className="text-lg font-bold text-[var(--foreground)]">{pomoStats.total}</p>
+              <p className="text-[10px] text-[var(--foreground-muted)]">Total Sessions</p>
+            </Card>
+            <Card variant="default" className="p-3 text-center">
+              <p className="text-lg font-bold text-[var(--foreground)]">{Math.round(pomoStats.totalMinutes / 60)}h</p>
+              <p className="text-[10px] text-[var(--foreground-muted)]">Focus Hours</p>
+            </Card>
+          </div>
         </div>
       )}
 

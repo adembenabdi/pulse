@@ -87,19 +87,6 @@ export const api = {
     deleteWeekly: (id: string) => request<{ message: string }>(`/meals/weekly/${id}`, { method: 'DELETE' }),
   },
 
-  // ── Learning ──
-  learning: {
-    get: (params?: { date?: string; category?: string }) => {
-      const qs = new URLSearchParams(params as Record<string, string>).toString();
-      return request<Record<string, unknown>[]>(`/learning${qs ? `?${qs}` : ''}`);
-    },
-    create: (data: Record<string, unknown>) =>
-      request<Record<string, unknown>>('/learning', { method: 'POST', body: JSON.stringify(data) }),
-    update: (id: string, data: Record<string, unknown>) =>
-      request<Record<string, unknown>>(`/learning/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-    delete: (id: string) => request<{ message: string }>(`/learning/${id}`, { method: 'DELETE' }),
-  },
-
   // ── Work ──
   work: {
     projects: {
@@ -162,6 +149,7 @@ export const api = {
     update: (id: string, data: Record<string, unknown>) =>
       request<Record<string, unknown>>(`/finance/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
     delete: (id: string) => request<{ message: string }>(`/finance/${id}`, { method: 'DELETE' }),
+    restore: (id: string) => request<Record<string, unknown>>(`/finance/${id}/restore`, { method: 'POST' }),
   },
 
   // ── Tasks ──
@@ -175,6 +163,7 @@ export const api = {
     update: (id: string, data: Record<string, unknown>) =>
       request<Record<string, unknown>>(`/tasks/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
     delete: (id: string) => request<{ message: string }>(`/tasks/${id}`, { method: 'DELETE' }),
+    restore: (id: string) => request<Record<string, unknown>>(`/tasks/${id}/restore`, { method: 'POST' }),
   },
 
   // ── Habits ──
@@ -185,6 +174,7 @@ export const api = {
     update: (id: string, data: Record<string, unknown>) =>
       request<Record<string, unknown>>(`/habits/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
     delete: (id: string) => request<{ message: string }>(`/habits/${id}`, { method: 'DELETE' }),
+    restore: (id: string) => request<Record<string, unknown>>(`/habits/${id}/restore`, { method: 'POST' }),
     logs: {
       get: (params?: { date?: string; habit_id?: string; from?: string; to?: string }) => {
         const qs = new URLSearchParams(params as Record<string, string>).toString();
@@ -220,6 +210,7 @@ export const api = {
     update: (id: string, data: Record<string, unknown>) =>
       request<Record<string, unknown>>(`/goals/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
     delete: (id: string) => request<{ message: string }>(`/goals/${id}`, { method: 'DELETE' }),
+    restore: (id: string) => request<Record<string, unknown>>(`/goals/${id}/restore`, { method: 'POST' }),
     milestones: {
       create: (goalId: string, title: string) =>
         request<Record<string, unknown>>(`/goals/${goalId}/milestones`, { method: 'POST', body: JSON.stringify({ title }) }),
@@ -244,6 +235,7 @@ export const api = {
     update: (id: string, data: Record<string, unknown>) =>
       request<Record<string, unknown>>(`/ideas/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
     delete: (id: string) => request<{ message: string }>(`/ideas/${id}`, { method: 'DELETE' }),
+    restore: (id: string) => request<Record<string, unknown>>(`/ideas/${id}/restore`, { method: 'POST' }),
     generate: (description: string) =>
       request<{ description: string; tasks: { title: string; done: boolean }[]; materials: { name: string; category: string; note: string }[]; extra_features: { title: string; description: string }[] }>(
         '/ideas/generate', { method: 'POST', body: JSON.stringify({ description }) }
@@ -261,6 +253,14 @@ export const api = {
     delete: (id: string) => request<{ message: string }>(`/friends/${id}`, { method: 'DELETE' }),
     organizeSkills: (raw: string) =>
       request<{ skills: string[] }>('/friends/organize-skills', { method: 'POST', body: JSON.stringify({ raw }) }),
+    groups: {
+      get: () => request<Record<string, unknown>[]>('/friends/groups'),
+      create: (data: { name: string; color?: string; member_ids?: string[] }) =>
+        request<Record<string, unknown>>('/friends/groups', { method: 'POST', body: JSON.stringify(data) }),
+      update: (id: string, data: Record<string, unknown>) =>
+        request<Record<string, unknown>>(`/friends/groups/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+      delete: (id: string) => request<{ message: string }>(`/friends/groups/${id}`, { method: 'DELETE' }),
+    },
   },
 
   // ── Assistant ──
@@ -278,9 +278,68 @@ export const api = {
     update: (id: string, data: Record<string, unknown>) =>
       request<Record<string, unknown>>(`/calendar/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
     delete: (id: string) => request<{ message: string }>(`/calendar/${id}`, { method: 'DELETE' }),
+    restore: (id: string) => request<Record<string, unknown>>(`/calendar/${id}/restore`, { method: 'POST' }),
     islamicHolidays: (year: number) =>
       request<{ date: string; title: string }[]>(`/calendar/islamic?year=${year}`),
     birthdays: (year: number) =>
       request<{ date: string; title: string; relationship: string; friendId: string }[]>(`/calendar/birthdays?year=${year}`),
+  },
+
+  // ── Learning (restore) ──
+  learning: {
+    get: (params?: { date?: string; category?: string }) => {
+      const qs = new URLSearchParams(params as Record<string, string>).toString();
+      return request<Record<string, unknown>[]>(`/learning${qs ? `?${qs}` : ''}`);
+    },
+    create: (data: Record<string, unknown>) =>
+      request<Record<string, unknown>>('/learning', { method: 'POST', body: JSON.stringify(data) }),
+    update: (id: string, data: Record<string, unknown>) =>
+      request<Record<string, unknown>>(`/learning/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    delete: (id: string) => request<{ message: string }>(`/learning/${id}`, { method: 'DELETE' }),
+    restore: (id: string) => request<Record<string, unknown>>(`/learning/${id}/restore`, { method: 'POST' }),
+  },
+
+  // ── Quran ──
+  quran: {
+    get: (params?: { from?: string; to?: string; type?: string }) => {
+      const qs = new URLSearchParams(params as Record<string, string>).toString();
+      return request<Record<string, unknown>[]>(`/quran${qs ? `?${qs}` : ''}`);
+    },
+    create: (data: Record<string, unknown>) =>
+      request<Record<string, unknown>>('/quran', { method: 'POST', body: JSON.stringify(data) }),
+    update: (id: string, data: Record<string, unknown>) =>
+      request<Record<string, unknown>>(`/quran/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    delete: (id: string) => request<{ message: string }>(`/quran/${id}`, { method: 'DELETE' }),
+    stats: () => request<Record<string, unknown>>('/quran/stats'),
+  },
+
+  // ── Pomodoro ──
+  pomodoro: {
+    get: (date?: string) => request<Record<string, unknown>[]>(`/pomodoro${date ? `?date=${date}` : ''}`),
+    start: (data: { duration?: number; break_duration?: number; study_session_id?: string; label?: string }) =>
+      request<Record<string, unknown>>('/pomodoro', { method: 'POST', body: JSON.stringify(data) }),
+    complete: (id: string) =>
+      request<Record<string, unknown>>(`/pomodoro/${id}`, { method: 'PUT', body: JSON.stringify({ status: 'completed' }) }),
+    cancel: (id: string) =>
+      request<Record<string, unknown>>(`/pomodoro/${id}`, { method: 'PUT', body: JSON.stringify({ status: 'cancelled' }) }),
+    stats: () => request<Record<string, unknown>>('/pomodoro/stats'),
+  },
+
+  // ── Budget ──
+  budget: {
+    get: (month?: string) => request<Record<string, unknown>[]>(`/budget${month ? `?month=${month}` : ''}`),
+    set: (data: { month: string; category: string; limit_amount: number }) =>
+      request<Record<string, unknown>>('/budget', { method: 'POST', body: JSON.stringify(data) }),
+    delete: (id: string) => request<{ message: string }>(`/budget/${id}`, { method: 'DELETE' }),
+  },
+
+  // ── Reports ──
+  reports: {
+    get: (params?: { type?: string; limit?: string }) => {
+      const qs = new URLSearchParams(params as Record<string, string>).toString();
+      return request<Record<string, unknown>[]>(`/reports${qs ? `?${qs}` : ''}`);
+    },
+    generate: (type: 'weekly' | 'monthly', period_start: string, period_end: string) =>
+      request<Record<string, unknown>>('/reports/generate', { method: 'POST', body: JSON.stringify({ type, period_start, period_end }) }),
   },
 };

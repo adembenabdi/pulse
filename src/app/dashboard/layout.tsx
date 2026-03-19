@@ -10,7 +10,7 @@ import {
   LayoutDashboard, Calendar, CalendarDays, CheckSquare, Moon, Dumbbell, UtensilsCrossed,
   BookOpen, Code, Briefcase, GraduationCap, Wallet, Target, BookHeart,
   PenLine, Settings, LogOut, Sun, MoonStar, ChevronLeft, ChevronRight,
-  Menu, X, Sparkles, User, Lightbulb, Users
+  Menu, X, Sparkles, User, Lightbulb, Users, BookOpenCheck, BarChart3, Timer
 } from 'lucide-react';
 import AssistantWidget from '@/components/AssistantWidget';
 
@@ -20,6 +20,7 @@ const NAV_SECTIONS = [
     items: [
       { href: '/dashboard', icon: LayoutDashboard, label: 'Today' },
       { href: '/dashboard/prayer', icon: Moon, label: 'Prayer Times' },
+      { href: '/dashboard/quran', icon: BookOpenCheck, label: 'Quran' },
       { href: '/dashboard/sport', icon: Dumbbell, label: 'Sport' },
       { href: '/dashboard/meals', icon: UtensilsCrossed, label: 'Meals' },
       { href: '/dashboard/learning', icon: BookOpen, label: 'Learning' },
@@ -44,6 +45,7 @@ const NAV_SECTIONS = [
       { href: '/dashboard/journal', icon: PenLine, label: 'Journal' },
       { href: '/dashboard/calendar', icon: CalendarDays, label: 'Calendar' },
       { href: '/dashboard/friends', icon: Users, label: 'Friends' },
+      { href: '/dashboard/reports', icon: BarChart3, label: 'Reports' },
     ],
   },
 ];

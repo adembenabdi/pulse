@@ -50,6 +50,11 @@ function mapDbUser(raw: Record<string, unknown>): UserProfile {
       food: raw.mod_food !== false,
       learning: raw.mod_learning !== false,
     },
+    telegramChatId: (raw.telegram_chat_id as string) || undefined,
+    telegramUsername: (raw.telegram_username as string) || undefined,
+    telegramNotifications: (raw.telegram_notifications as UserProfile['telegramNotifications']) || undefined,
+    dashboardWidgets: (raw.dashboard_widgets as UserProfile['dashboardWidgets']) || undefined,
+    themeSchedule: (raw.theme_schedule as UserProfile['themeSchedule']) || undefined,
     createdAt: (raw.created_at as string) || new Date().toISOString(),
   };
 }
@@ -111,6 +116,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       payload.mod_food = updates.modules.food;
       payload.mod_learning = updates.modules.learning;
     }
+    if (updates.telegramNotifications !== undefined) payload.telegram_notifications = updates.telegramNotifications;
+    if (updates.dashboardWidgets !== undefined) payload.dashboard_widgets = updates.dashboardWidgets;
+    if (updates.themeSchedule !== undefined) payload.theme_schedule = updates.themeSchedule;
 
     const raw = await api.auth.updateProfile(payload);
     setUser(mapDbUser(raw));

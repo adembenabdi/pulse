@@ -1,19 +1,32 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/context/AuthContext';
-import { Card, Badge, Button, ProgressRing } from '@/components/ui/primitives';
+import { Card, Badge } from '@/components/ui/primitives';
 import { usePrayerTimes } from '@/hooks/usePrayerTimes';
-import { getFromStorage } from '@/lib/storage';
+import { api } from '@/lib/api';
 import {
   Sun, Moon, Cloud, BookOpen, Dumbbell, UtensilsCrossed,
-  GraduationCap, Briefcase, Wallet, Target, CheckSquare,
-  ChevronRight, Clock, Flame, Sparkles, CalendarDays,
+  GraduationCap, Wallet, Target, CheckSquare,
+  ChevronRight, Flame, Sparkles, CalendarDays, Timer, BookOpenCheck,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import Link from 'next/link';
-import type { SportLog, Task, Course, Transaction, LearningEntry, Habit, HabitLog, PrayerLog } from '@/types';
+import type { DashboardWidget } from '@/types';
+
+const DEFAULT_WIDGETS: DashboardWidget[] = [
+  { id: 'w-prayer', type: 'prayer', visible: true, order: 0 },
+  { id: 'w-tasks', type: 'tasks', visible: true, order: 1 },
+  { id: 'w-habits', type: 'habits', visible: true, order: 2 },
+  { id: 'w-finance', type: 'finance', visible: true, order: 3 },
+  { id: 'w-study', type: 'study', visible: true, order: 4 },
+  { id: 'w-sport', type: 'sport', visible: true, order: 5 },
+  { id: 'w-calendar', type: 'calendar', visible: true, order: 6 },
+  { id: 'w-quran', type: 'quran', visible: true, order: 7 },
+  { id: 'w-goals', type: 'goals', visible: true, order: 8 },
+  { id: 'w-pomodoro', type: 'pomodoro', visible: true, order: 9 },
+];
 
 function getGreeting(): { text: string; icon: React.ReactNode } {
   const h = new Date().getHours();
@@ -25,60 +38,182 @@ function getGreeting(): { text: string; icon: React.ReactNode } {
 
 export default function DashboardPage() {
   const { user } = useAuth();
-  const { times: prayerTimes, nextPrayer } = usePrayerTimes(user?.city || 'algiers');
+  const { nextPrayer } = usePrayerTimes(user?.city || 'algiers');
   const today = format(new Date(), 'yyyy-MM-dd');
 
-  const [sportLog, setSportLog] = useState<SportLog | null>(null);
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [courses, setCourses] = useState<Course[]>([]);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [learningEntry, setLearningEntry] = useState<LearningEntry | null>(null);
+  const [sportProgress, setSportProgress] = useState(0);
+  const [pendingTasks, setPendingTasks] = useState(0);
   const [habits, setHabits] = useState<{ total: number; done: number }>({ total: 0, done: 0 });
-  const [prayerLogs, setPrayerLogs] = useState<PrayerLog[]>([]);
+  const [monthlyBalance, setMonthlyBalance] = useState(0);
+  const [prayersDone, setPrayersDone] = useState(0);
+  const [todayCourses, setTodayCourses] = useState<{ id: string; name: string; startTime: string; endTime: string; room?: string; color: string; type: string }[]>([]);
+  const [learningEntry, setLearningEntry] = useState<{ category: string; duration: number } | null>(null);
+  const [quranStreak, setQuranStreak] = useState(0);
+  const [pomodoroToday, setPomodoroToday] = useState(0);
+  const [activeGoals, setActiveGoals] = useState(0);
+  const [upcomingEvents, setUpcomingEvents] = useState(0);
+
+  const widgets = useMemo(() => {
+    const cfg = user?.dashboardWidgets;
+    if (cfg && cfg.length > 0) return [...cfg].sort((a, b) => a.order - b.order);
+    return DEFAULT_WIDGETS;
+  }, [user?.dashboardWidgets]);
+
+  const isVisible = useCallback((type: string) => {
+    const w = widgets.find(w => w.type === type);
+    return w ? w.visible : true;
+  }, [widgets]);
 
   useEffect(() => {
     if (!user) return;
-    // Sport
-    const sportData = getFromStorage<SportLog | null>(user.id, `sport:${today}`, null);
-    setSportLog(sportData || null);
-    // Tasks
-    setTasks(getFromStorage<Task[]>(user.id, 'tasks', []));
-    // Courses
-    setCourses(getFromStorage<Course[]>(user.id, 'study:courses', []));
-    // Finance
-    setTransactions(getFromStorage<Transaction[]>(user.id, 'finance:transactions', []));
-    // Learning
-    const entries = getFromStorage<LearningEntry[]>(user.id, 'learning:entries', []);
-    setLearningEntry(entries.find(e => e.date === today) || null);
-    // Habits
-    const hbs = getFromStorage<{ id: string }[]>(user.id, 'habits', []);
-    const hLogs = getFromStorage<HabitLog[]>(user.id, 'habits:logs', []);
-    setHabits({ total: hbs.length, done: hLogs.filter(l => l.date === today && l.completed).length });
-    // Prayer
-    setPrayerLogs(getFromStorage<PrayerLog[]>(user.id, `prayer:${today}`, []));
-  }, [user, today]);
+    const load = async () => {
+      const promises: Promise<void>[] = [];
+
+      // Sport
+      if (user.modules.sport && isVisible('sport')) {
+        promises.push(
+          api.sport.get(today).then((data: Record<string, unknown>[]) => {
+            if (data.length > 0) {
+              const log = data[0] as { exercises?: { completed: number; target: number }[] };
+              const exs = log.exercises || [];
+              setSportProgress(exs.length > 0 ? Math.round(exs.reduce((s, e) => s + (e.completed / (e.target || 1)), 0) / exs.length * 100) : 0);
+            }
+          }).catch(() => {})
+        );
+      }
+
+      // Tasks
+      if (isVisible('tasks')) {
+        promises.push(
+          api.tasks.get().then((data: Record<string, unknown>[]) => {
+            setPendingTasks(data.filter(t => t.status !== 'completed').length);
+          }).catch(() => {})
+        );
+      }
+
+      // Habits
+      if (isVisible('habits')) {
+        promises.push(
+          Promise.all([api.habits.get(), api.habits.logs.get({ date: today })]).then(([hbs, logs]) => {
+            setHabits({ total: hbs.length, done: (logs as { completed?: boolean }[]).filter(l => l.completed).length });
+          }).catch(() => {})
+        );
+      }
+
+      // Finance
+      if (isVisible('finance')) {
+        promises.push(
+          api.finance.summary().then(data => {
+            setMonthlyBalance(data.balance);
+          }).catch(() => {})
+        );
+      }
+
+      // Prayer
+      if (user.modules.prayer && isVisible('prayer')) {
+        promises.push(
+          api.prayer.get(today).then((data: Record<string, unknown>[]) => {
+            setPrayersDone((data as { completed?: boolean }[]).filter(l => l.completed).length);
+          }).catch(() => {})
+        );
+      }
+
+      // Study courses
+      if (isVisible('study')) {
+        promises.push(
+          api.study.courses.get().then((data: Record<string, unknown>[]) => {
+            const dayOfWeek = new Date().getDay();
+            const filtered = (data as { id: string; name: string; start_time: string; end_time: string; room?: string; color: string; type: string; day: number }[])
+              .filter(c => c.day === dayOfWeek)
+              .sort((a, b) => a.start_time.localeCompare(b.start_time))
+              .slice(0, 4)
+              .map(c => ({ id: c.id, name: c.name, startTime: c.start_time, endTime: c.end_time, room: c.room, color: c.color, type: c.type }));
+            setTodayCourses(filtered);
+          }).catch(() => {})
+        );
+      }
+
+      // Learning
+      if (user.modules.learning) {
+        promises.push(
+          api.learning.get({ date: today }).then((data: Record<string, unknown>[]) => {
+            if (data.length > 0) {
+              const e = data[0] as { category: string; duration: number };
+              setLearningEntry({ category: e.category, duration: e.duration });
+            }
+          }).catch(() => {})
+        );
+      }
+
+      // Quran
+      if (isVisible('quran')) {
+        promises.push(
+          api.quran.stats().then((data: Record<string, unknown>) => {
+            setQuranStreak((data as { current_streak?: number }).current_streak || 0);
+          }).catch(() => {})
+        );
+      }
+
+      // Pomodoro
+      if (isVisible('pomodoro')) {
+        promises.push(
+          api.pomodoro.get(today).then((data: Record<string, unknown>[]) => {
+            setPomodoroToday((data as { status?: string }[]).filter(s => s.status === 'completed').length);
+          }).catch(() => {})
+        );
+      }
+
+      // Goals
+      if (isVisible('goals')) {
+        promises.push(
+          api.goals.get({ status: 'active' }).then((data: Record<string, unknown>[]) => {
+            setActiveGoals(data.length);
+          }).catch(() => {})
+        );
+      }
+
+      // Calendar
+      if (isVisible('calendar')) {
+        promises.push(
+          api.calendar.get(format(new Date(), 'yyyy-MM')).then((data: Record<string, unknown>[]) => {
+            const upcoming = (data as { date: string }[]).filter(e => e.date >= today).length;
+            setUpcomingEvents(upcoming);
+          }).catch(() => {})
+        );
+      }
+
+      await Promise.all(promises);
+    };
+    load();
+  }, [user, today, isVisible]);
 
   if (!user) return null;
 
   const greeting = getGreeting();
-  const todayCourses = courses.filter(c => c.day === new Date().getDay())
-    .sort((a, b) => a.startTime.localeCompare(b.startTime));
-  const pendingTasks = tasks.filter(t => t.status !== 'completed').length;
-  const monthlyBalance = (() => {
-    const income = transactions.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
-    const expense = transactions.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
-    return income - expense;
-  })();
-  const prayersDone = prayerLogs.filter(l => l.completed).length;
-  const sportProgress = sportLog
-    ? Math.round(
-        (sportLog.exercises || []).reduce((sum: number, e: { completed: number; target: number }) => sum + (e.completed / (e.target || 1)), 0)
-        / ((sportLog.exercises || []).length || 1) * 100
-      )
-    : 0;
-
   const container = { hidden: {}, show: { transition: { staggerChildren: 0.05 } } };
   const item = { hidden: { opacity: 0, y: 15 }, show: { opacity: 1, y: 0 } };
+
+  // Widget stat cards
+  const statWidgets: Record<string, { icon: React.ReactNode; value: string; label: string; href: string; color: string }> = {
+    sport: { icon: <Dumbbell className="w-5 h-5" />, value: `${sportProgress}%`, label: 'Sport', href: '/dashboard/sport', color: 'var(--success)' },
+    habits: { icon: <Flame className="w-5 h-5" />, value: `${habits.done}/${habits.total}`, label: 'Habits', href: '/dashboard/habits', color: 'var(--warning)' },
+    tasks: { icon: <CheckSquare className="w-5 h-5" />, value: `${pendingTasks}`, label: 'Tasks', href: '/dashboard/tasks', color: 'var(--primary)' },
+    finance: { icon: <Wallet className="w-5 h-5" />, value: monthlyBalance.toFixed(0), label: 'Balance DA', href: '/dashboard/finance', color: monthlyBalance >= 0 ? 'var(--success)' : 'var(--danger)' },
+    quran: { icon: <BookOpenCheck className="w-5 h-5" />, value: `${quranStreak}d`, label: 'Quran Streak', href: '/dashboard/quran', color: 'var(--emerald, var(--success))' },
+    pomodoro: { icon: <Timer className="w-5 h-5" />, value: `${pomodoroToday}`, label: 'Focus Today', href: '/dashboard/study', color: 'var(--danger)' },
+    goals: { icon: <Target className="w-5 h-5" />, value: `${activeGoals}`, label: 'Goals', href: '/dashboard/goals', color: 'var(--violet, var(--primary))' },
+    calendar: { icon: <CalendarDays className="w-5 h-5" />, value: `${upcomingEvents}`, label: 'Events', href: '/dashboard/calendar', color: 'var(--cyan, var(--primary))' },
+  };
+
+  // Determine visible stat widgets in configured order
+  const visibleStats = widgets
+    .filter(w => w.visible && statWidgets[w.type])
+    .filter(w => {
+      if (w.type === 'sport' && !user.modules.sport) return false;
+      if (w.type === 'habits' && habits.total === 0) return false;
+      return true;
+    })
+    .map(w => ({ ...statWidgets[w.type], type: w.type }));
 
   return (
     <motion.div className="space-y-6" variants={container} initial="hidden" animate="show">
@@ -100,7 +235,7 @@ export default function DashboardPage() {
       </motion.div>
 
       {/* Prayer banner */}
-      {user.modules.prayer && nextPrayer && (
+      {user.modules.prayer && nextPrayer && isVisible('prayer') && (
         <motion.div variants={item}>
           <Link href="/dashboard/prayer">
             <Card variant="elevated" depth className="p-4 group cursor-pointer hover:scale-[1.01] transition-transform">
@@ -124,44 +259,23 @@ export default function DashboardPage() {
         </motion.div>
       )}
 
-      {/* Quick stats grid */}
-      <motion.div variants={item} className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        {user.modules.sport && (
-          <Link href="/dashboard/sport">
-            <Card variant="default" className="p-3 text-center hover:scale-[1.02] transition-transform cursor-pointer">
-              <Dumbbell className="w-5 h-5 mx-auto text-[var(--success)] mb-1" />
-              <p className="text-lg font-bold text-[var(--foreground)]">{sportProgress}%</p>
-              <p className="text-[10px] text-[var(--foreground-muted)]">Sport</p>
-            </Card>
-          </Link>
-        )}
-        {habits.total > 0 && (
-          <Link href="/dashboard/habits">
-            <Card variant="default" className="p-3 text-center hover:scale-[1.02] transition-transform cursor-pointer">
-              <Flame className="w-5 h-5 mx-auto text-[var(--warning)] mb-1" />
-              <p className="text-lg font-bold text-[var(--foreground)]">{habits.done}/{habits.total}</p>
-              <p className="text-[10px] text-[var(--foreground-muted)]">Habits</p>
-            </Card>
-          </Link>
-        )}
-        <Link href="/dashboard/tasks">
-          <Card variant="default" className="p-3 text-center hover:scale-[1.02] transition-transform cursor-pointer">
-            <CheckSquare className="w-5 h-5 mx-auto text-[var(--primary)] mb-1" />
-            <p className="text-lg font-bold text-[var(--foreground)]">{pendingTasks}</p>
-            <p className="text-[10px] text-[var(--foreground-muted)]">Tasks</p>
-          </Card>
-        </Link>
-        <Link href="/dashboard/finance">
-          <Card variant="default" className="p-3 text-center hover:scale-[1.02] transition-transform cursor-pointer">
-            <Wallet className="w-5 h-5 mx-auto text-[var(--cyan)] mb-1" />
-            <p className={`text-lg font-bold ${monthlyBalance >= 0 ? 'text-[var(--success)]' : 'text-[var(--danger)]'}`}>{monthlyBalance.toFixed(0)}</p>
-            <p className="text-[10px] text-[var(--foreground-muted)]">Balance DA</p>
-          </Card>
-        </Link>
-      </motion.div>
+      {/* Quick stats grid — ordered by widget config */}
+      {visibleStats.length > 0 && (
+        <motion.div variants={item} className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {visibleStats.map(stat => (
+            <Link key={stat.type} href={stat.href}>
+              <Card variant="default" className="p-3 text-center hover:scale-[1.02] transition-transform cursor-pointer">
+                <div className="mx-auto mb-1 w-5 h-5" style={{ color: stat.color }}>{stat.icon}</div>
+                <p className="text-lg font-bold" style={{ color: stat.type === 'finance' ? stat.color : 'var(--foreground)' }}>{stat.value}</p>
+                <p className="text-[10px] text-[var(--foreground-muted)]">{stat.label}</p>
+              </Card>
+            </Link>
+          ))}
+        </motion.div>
+      )}
 
       {/* Today's classes */}
-      {todayCourses.length > 0 && (
+      {isVisible('study') && todayCourses.length > 0 && (
         <motion.div variants={item}>
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-sm font-bold text-[var(--foreground)] flex items-center gap-2">
@@ -170,20 +284,18 @@ export default function DashboardPage() {
             <Link href="/dashboard/schedule" className="text-xs text-[var(--primary)] hover:underline">See all</Link>
           </div>
           <div className="space-y-2">
-            {todayCourses.slice(0, 4).map(course => {
-              return (
-                <Card key={course.id} variant="default" className="p-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-1 h-8 rounded-full" style={{ backgroundColor: course.color }} />
-                    <div className="flex-1">
-                      <p className="text-sm font-semibold text-[var(--foreground)]">{course.name}</p>
-                      <p className="text-xs text-[var(--foreground-muted)]">{course.startTime} - {course.endTime} {course.room && `• ${course.room}`}</p>
-                    </div>
-                    <Badge variant="outline" size="sm">{course.type}</Badge>
+            {todayCourses.map(course => (
+              <Card key={course.id} variant="default" className="p-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-1 h-8 rounded-full" style={{ backgroundColor: course.color }} />
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold text-[var(--foreground)]">{course.name}</p>
+                    <p className="text-xs text-[var(--foreground-muted)]">{course.startTime} - {course.endTime} {course.room && `• ${course.room}`}</p>
                   </div>
-                </Card>
-              );
-            })}
+                  <Badge variant="outline" size="sm">{course.type}</Badge>
+                </div>
+              </Card>
+            ))}
           </div>
         </motion.div>
       )}

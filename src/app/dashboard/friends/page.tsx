@@ -3,8 +3,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/context/AuthContext';
-import { Card, Badge, Button, PageHeader, Input, TextArea, Label, Modal, StatCard, EmptyState } from '@/components/ui/primitives';
-import { Users, Plus, Search, Trash2, Edit3, Phone, Mail, MessageCircle, Send, Instagram, Facebook, Sparkles, X, ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
+import { Card, Badge, Button, PageHeader, Input, TextArea, Label, Modal, Tabs, StatCard, EmptyState } from '@/components/ui/primitives';
+import { Users, Plus, Search, Trash2, Edit3, Phone, Mail, MessageCircle, Send, Instagram, Facebook, Sparkles, X, ChevronDown, ChevronRight, Loader2, Tag, FolderPlus } from 'lucide-react';
 import { api } from '@/lib/api';
 
 interface Friend {
@@ -25,6 +25,13 @@ interface Friend {
   };
 }
 
+interface FriendGroup {
+  id: string;
+  name: string;
+  color: string;
+  members: { friend_id: string; friend_name: string }[];
+}
+
 const RELATIONSHIP_TYPES = [
   'Friend', 'Classmate', 'Colleague', 'Family', 'Mentor', 'Acquaintance', 'Business', 'Other',
 ];
@@ -33,6 +40,8 @@ const RELATIONSHIP_COLORS: Record<string, string> = {
   Friend: '#A855F7', Classmate: '#06B6D4', Colleague: '#34D399', Family: '#F97316',
   Mentor: '#EC4899', Acquaintance: '#6366F1', Business: '#FBBF24', Other: '#94A3B8',
 };
+
+const GROUP_COLORS = ['#A855F7', '#06B6D4', '#34D399', '#F97316', '#EC4899', '#6366F1', '#FBBF24', '#F87171'];
 
 const CONTACT_FIELDS = [
   { key: 'phone', label: 'Phone', icon: Phone, placeholder: '+213...' },
@@ -61,12 +70,16 @@ function ContactIcon({ type }: { type: string }) {
 export default function FriendsPage() {
   const { user } = useAuth();
   const [friends, setFriends] = useState<Friend[]>([]);
+  const [groups, setGroups] = useState<FriendGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filterRel, setFilterRel] = useState('all');
   const [showAdd, setShowAdd] = useState(false);
+  const [showGroupModal, setShowGroupModal] = useState(false);
+  const [editingGroup, setEditingGroup] = useState<FriendGroup | null>(null);
   const [editing, setEditing] = useState<Friend | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [tab, setTab] = useState('contacts');
 
   // Form state
   const [form, setForm] = useState({
@@ -75,6 +88,7 @@ export default function FriendsPage() {
     contacts: {} as Record<string, string>,
     birthday: '',
   });
+  const [groupForm, setGroupForm] = useState({ name: '', color: GROUP_COLORS[0], memberIds: [] as string[] });
   const [organizingSkills, setOrganizingSkills] = useState(false);
 
   const loadFriends = useCallback(async () => {
@@ -88,9 +102,19 @@ export default function FriendsPage() {
     }
   }, []);
 
+  const loadGroups = useCallback(async () => {
+    try {
+      const data = await api.friends.groups.get() as unknown as FriendGroup[];
+      setGroups(data);
+    } catch { /* silent */ }
+  }, []);
+
   useEffect(() => {
-    if (user) loadFriends();
-  }, [user, loadFriends]);
+    if (user) {
+      loadFriends();
+      loadGroups();
+    }
+  }, [user, loadFriends, loadGroups]);
 
   const resetForm = () => {
     setForm({ name: '', relationship: 'Friend', note: '', skillInput: '', skills: [], contacts: {}, birthday: '' });
@@ -173,6 +197,60 @@ export default function FriendsPage() {
     }
   };
 
+  // Group CRUD
+  const resetGroupForm = () => {
+    setGroupForm({ name: '', color: GROUP_COLORS[0], memberIds: [] });
+    setEditingGroup(null);
+  };
+
+  const openEditGroup = (g: FriendGroup) => {
+    setEditingGroup(g);
+    setGroupForm({ name: g.name, color: g.color || GROUP_COLORS[0], memberIds: g.members.map(m => m.friend_id) });
+    setShowGroupModal(true);
+  };
+
+  const handleSaveGroup = async () => {
+    if (!groupForm.name.trim()) return;
+    try {
+      if (editingGroup) {
+        await api.friends.groups.update(editingGroup.id, {
+          name: groupForm.name.trim(),
+          color: groupForm.color,
+          member_ids: groupForm.memberIds,
+        });
+      } else {
+        await api.friends.groups.create({
+          name: groupForm.name.trim(),
+          color: groupForm.color,
+          member_ids: groupForm.memberIds,
+        });
+      }
+      await loadGroups();
+      setShowGroupModal(false);
+      resetGroupForm();
+    } catch { /* silent */ }
+  };
+
+  const handleDeleteGroup = async (id: string) => {
+    try {
+      await api.friends.groups.delete(id);
+      setGroups(g => g.filter(x => x.id !== id));
+    } catch { /* silent */ }
+  };
+
+  const toggleGroupMember = (friendId: string) => {
+    setGroupForm(f => ({
+      ...f,
+      memberIds: f.memberIds.includes(friendId)
+        ? f.memberIds.filter(id => id !== friendId)
+        : [...f.memberIds, friendId],
+    }));
+  };
+
+  // Get groups a friend belongs to
+  const getFriendGroups = (friendId: string) =>
+    groups.filter(g => g.members.some(m => m.friend_id === friendId));
+
   // Filtered friends
   const filtered = friends.filter(f => {
     const matchSearch = !search ||
@@ -196,7 +274,10 @@ export default function FriendsPage() {
   return (
     <div className="space-y-6">
       <PageHeader title="Friends" description="Your contacts & network" icon={<Users className="w-5 h-5" />}>
-        <Button onClick={() => { resetForm(); setShowAdd(true); }}><Plus className="w-4 h-4" /> Add Contact</Button>
+        <div className="flex gap-2">
+          <Button variant="secondary" onClick={() => { resetGroupForm(); setShowGroupModal(true); }}><FolderPlus className="w-4 h-4" /> Group</Button>
+          <Button onClick={() => { resetForm(); setShowAdd(true); }}><Plus className="w-4 h-4" /> Add Contact</Button>
+        </div>
       </PageHeader>
 
       {/* Stats */}
@@ -227,8 +308,18 @@ export default function FriendsPage() {
         </div>
       )}
 
+      {/* Tabs */}
+      <Tabs
+        tabs={[
+          { id: 'contacts', label: 'Contacts', icon: <Users className="w-4 h-4" />, count: friends.length },
+          { id: 'groups', label: 'Groups', icon: <Tag className="w-4 h-4" />, count: groups.length },
+        ]}
+        active={tab}
+        onChange={setTab}
+      />
+
       {/* Friends List */}
-      {loading ? (
+      {tab === 'contacts' && (loading ? (
         <div className="flex items-center justify-center py-20">
           <Loader2 className="w-6 h-6 animate-spin text-[var(--primary)]" />
         </div>
@@ -283,6 +374,16 @@ export default function FriendsPage() {
                                 +{friend.skills.length - 4}
                               </span>
                             )}
+                          </div>
+                        )}
+                        {/* Group badges */}
+                        {getFriendGroups(friend.id).length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {getFriendGroups(friend.id).map(g => (
+                              <span key={g.id} className="text-[10px] px-1.5 py-px rounded-full text-white font-medium" style={{ backgroundColor: g.color || '#6366F1' }}>
+                                {g.name}
+                              </span>
+                            ))}
                           </div>
                         )}
                       </div>
@@ -369,6 +470,58 @@ export default function FriendsPage() {
               </motion.div>
             );
           })}
+        </div>
+      ))}
+
+      {/* Groups Tab */}
+      {tab === 'groups' && (
+        <div className="space-y-3">
+          {groups.length === 0 ? (
+            <EmptyState
+              icon={<Tag className="w-8 h-8" />}
+              title="No groups yet"
+              description="Organize your contacts into groups"
+              action={<Button onClick={() => { resetGroupForm(); setShowGroupModal(true); }}><Plus className="w-4 h-4" /> Create Group</Button>}
+            />
+          ) : (
+            groups.map((group, i) => (
+              <motion.div key={group.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.03 }}>
+                <Card variant="elevated" className="p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold text-sm" style={{ backgroundColor: group.color || '#6366F1' }}>
+                        {group.name.charAt(0).toUpperCase()}
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold text-[var(--foreground)]">{group.name}</p>
+                        <p className="text-xs text-[var(--foreground-muted)]">{group.members.length} member{group.members.length !== 1 ? 's' : ''}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Button variant="ghost" size="icon" onClick={() => openEditGroup(group)}>
+                        <Edit3 className="w-3.5 h-3.5 text-[var(--foreground-muted)]" />
+                      </Button>
+                      <Button variant="ghost" size="icon" onClick={() => handleDeleteGroup(group.id)}>
+                        <Trash2 className="w-3.5 h-3.5 text-[var(--danger)]" />
+                      </Button>
+                    </div>
+                  </div>
+                  {group.members.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {group.members.map(m => (
+                        <span key={m.friend_id} className="text-xs px-2 py-1 rounded-full bg-[var(--background-surface)] text-[var(--foreground)]">
+                          {m.friend_name}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </Card>
+              </motion.div>
+            ))
+          )}
+          <Button variant="secondary" className="w-full" onClick={() => { resetGroupForm(); setShowGroupModal(true); }}>
+            <Plus className="w-4 h-4" /> Create Group
+          </Button>
         </div>
       )}
 
@@ -471,6 +624,59 @@ export default function FriendsPage() {
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="ghost" onClick={() => { setShowAdd(false); resetForm(); }}>Cancel</Button>
             <Button onClick={handleSave} disabled={!form.name.trim()}>{editing ? 'Save Changes' : 'Add Contact'}</Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Group Modal */}
+      <Modal isOpen={showGroupModal} onClose={() => { setShowGroupModal(false); resetGroupForm(); }} title={editingGroup ? 'Edit Group' : 'New Group'}>
+        <div className="space-y-4">
+          <div>
+            <Label>Group Name</Label>
+            <Input placeholder="e.g. Study Group, Football Team..." value={groupForm.name} onChange={e => setGroupForm(f => ({ ...f, name: e.target.value }))} />
+          </div>
+          <div>
+            <Label>Color</Label>
+            <div className="flex gap-2 flex-wrap">
+              {GROUP_COLORS.map(c => (
+                <button
+                  key={c}
+                  onClick={() => setGroupForm(f => ({ ...f, color: c }))}
+                  className={`w-8 h-8 rounded-full transition-all ${groupForm.color === c ? 'ring-2 ring-offset-2 ring-offset-[var(--background)] scale-110' : 'hover:scale-105'}`}
+                  style={{ backgroundColor: c, ringColor: c }}
+                />
+              ))}
+            </div>
+          </div>
+          <div>
+            <Label>Members ({groupForm.memberIds.length} selected)</Label>
+            <div className="max-h-48 overflow-y-auto space-y-1 mt-2">
+              {friends.map(f => {
+                const selected = groupForm.memberIds.includes(f.id);
+                return (
+                  <button
+                    key={f.id}
+                    onClick={() => toggleGroupMember(f.id)}
+                    className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left text-sm transition-colors ${
+                      selected ? 'bg-[var(--primary)]/15 text-[var(--foreground)]' : 'hover:bg-[var(--background-surface)] text-[var(--foreground-muted)]'
+                    }`}
+                  >
+                    <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center ${
+                      selected ? 'border-[var(--primary)] bg-[var(--primary)]' : 'border-[var(--border)]'
+                    }`}>
+                      {selected && <span className="text-white text-xs">✓</span>}
+                    </div>
+                    {f.name}
+                    {f.relationship && <span className="text-xs text-[var(--foreground-muted)] ml-auto">{f.relationship}</span>}
+                  </button>
+                );
+              })}
+              {friends.length === 0 && <p className="text-sm text-[var(--foreground-muted)] py-2">No contacts to add</p>}
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="ghost" onClick={() => { setShowGroupModal(false); resetGroupForm(); }}>Cancel</Button>
+            <Button onClick={handleSaveGroup} disabled={!groupForm.name.trim()}>{editingGroup ? 'Save' : 'Create'}</Button>
           </div>
         </div>
       </Modal>

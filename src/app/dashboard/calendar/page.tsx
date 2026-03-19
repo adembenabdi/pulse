@@ -1,14 +1,15 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/context/AuthContext';
 import { Card, Badge, Button, PageHeader, Input, TextArea, Label, Select, Modal, cn } from '@/components/ui/primitives';
 import {
   CalendarDays, ChevronLeft, ChevronRight, Plus, Trash2, Clock, MapPin,
-  Star, Flag, Moon, Heart, Briefcase, Users, GraduationCap, Sparkles, X,
+  Star, Flag, Moon, Heart, Briefcase, Users, GraduationCap, Sparkles, X, GripVertical,
 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { useUndoDelete } from '@/hooks/useUndoDelete';
 
 // ── Types ──
 interface CalendarEvent {
@@ -105,6 +106,10 @@ export default function CalendarPage() {
     title: '', date: '', start_time: '', end_time: '',
     category: 'personal', color: '', description: '', all_day: true,
   });
+
+  // Drag state for event rescheduling
+  const [dragEventId, setDragEventId] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
 
   const monthStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}`;
 
@@ -204,6 +209,12 @@ export default function CalendarPage() {
   const goToday = () => { setCurrentMonth(today.getMonth()); setCurrentYear(today.getFullYear()); };
 
   // CRUD
+  const { triggerDelete } = useUndoDelete({
+    restoreFn: (id: string) => api.calendar.restore(id),
+    onRestore: loadEvents,
+    label: 'Event',
+  });
+
   const handleSave = async () => {
     if (!form.title.trim() || !form.date) return;
     const payload = {
@@ -225,10 +236,27 @@ export default function CalendarPage() {
   };
 
   const handleDelete = async (id: string) => {
-    try {
+    triggerDelete(id, async () => {
       await api.calendar.delete(id);
       setEvents(ev => ev.filter(e => e.id !== id));
+    });
+  };
+
+  // Drag & drop to reschedule events
+  const handleDrop = async (dateStr: string) => {
+    if (!dragEventId) return;
+    const ev = events.find(e => e.id === dragEventId);
+    if (!ev || ev.date === dateStr) {
+      setDragEventId(null);
+      setDropTarget(null);
+      return;
+    }
+    try {
+      await api.calendar.update(dragEventId, { date: dateStr });
+      await loadEvents();
     } catch { /* silent */ }
+    setDragEventId(null);
+    setDropTarget(null);
   };
 
   const resetForm = () => {
@@ -361,6 +389,9 @@ export default function CalendarPage() {
                 whileTap={{ scale: 0.97 }}
                 onClick={() => setSelectedDate(isSelected ? null : dateStr)}
                 onDoubleClick={() => openAddForDate(dateStr)}
+                onDragOver={e => { e.preventDefault(); setDropTarget(dateStr); }}
+                onDragLeave={() => setDropTarget(null)}
+                onDrop={e => { e.preventDefault(); handleDrop(dateStr); }}
                 className={cn(
                   'aspect-square sm:aspect-auto sm:min-h-[80px] rounded-xl p-1 sm:p-1.5 cursor-pointer transition-all duration-200 relative group',
                   'border backdrop-blur-sm',
@@ -368,6 +399,8 @@ export default function CalendarPage() {
                     ? 'bg-gradient-to-br from-[var(--primary)]/15 to-[var(--violet)]/10 border-[var(--primary)]/30 shadow-[0_0_20px_rgba(168,85,247,0.15)]'
                     : isSelected
                     ? 'bg-[var(--primary)]/10 border-[var(--primary)]/25'
+                    : dropTarget === dateStr
+                    ? 'bg-[var(--primary)]/20 border-[var(--primary)]/40 ring-2 ring-[var(--primary)]/30'
                     : 'bg-white/[0.02] border-white/[0.04] hover:bg-white/[0.06] hover:border-white/[0.1]',
                   isFriday && !isToday && !isSelected && 'bg-[var(--warning)]/[0.03] border-[var(--warning)]/[0.08]'
                 )}
@@ -481,6 +514,9 @@ export default function CalendarPage() {
                         animate={{ opacity: 1, x: 0 }}
                         transition={{ delay: i * 0.04 }}
                         className="group relative"
+                        draggable={!e.isHoliday}
+                        onDragStart={() => !e.isHoliday && setDragEventId(e.id)}
+                        onDragEnd={() => setDragEventId(null)}
                       >
                         <div
                           className="flex items-start gap-3 p-3 rounded-xl border backdrop-blur-sm transition-all hover:scale-[1.01]"
@@ -491,6 +527,9 @@ export default function CalendarPage() {
                           }}
                         >
                           {/* Color dot */}
+                          {!e.isHoliday && (
+                            <GripVertical className="w-3 h-3 text-[var(--foreground-muted)] opacity-0 group-hover:opacity-50 cursor-grab flex-shrink-0" />
+                          )}
                           <div
                             className="w-3 h-3 rounded-full flex-shrink-0 mt-1"
                             style={{ backgroundColor: col, boxShadow: `0 0 8px ${col}40` }}
