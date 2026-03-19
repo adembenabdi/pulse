@@ -6,7 +6,7 @@ import { useAuth } from '@/context/AuthContext';
 import { usePrayerTimes, ALGERIAN_CITIES } from '@/hooks/usePrayerTimes';
 import { Card, Badge, Button, PageHeader, Select, ProgressRing, Spinner } from '@/components/ui/primitives';
 import { Moon, Sun, Sunrise, Sunset, Clock, Check, MapPin, RefreshCw } from 'lucide-react';
-import { getFromStorage, saveToStorage, generateId } from '@/lib/storage';
+import { api } from '@/lib/api';
 import type { PrayerLog, PrayerTimes } from '@/types';
 import { format } from 'date-fns';
 
@@ -38,28 +38,49 @@ export default function PrayerPage() {
 
   useEffect(() => {
     if (!user) return;
-    const saved = getFromStorage<PrayerLog[]>(user.id, `prayer:${today}`, []);
-    setLogs(saved);
+    api.prayer.get(today).then((data) => {
+      const mapped = (data as { prayer: string; completed: boolean; on_time?: boolean; time?: string; id?: string; date?: string }[]).map(d => ({
+        id: d.id || '',
+        date: d.date || today,
+        prayer: d.prayer as keyof PrayerTimes,
+        completed: d.completed,
+        onTime: d.on_time ?? false,
+        time: d.time || '',
+      }));
+      setLogs(mapped);
+    }).catch(() => {});
   }, [user, today]);
 
   const togglePrayer = (prayerName: keyof PrayerTimes) => {
     if (!user) return;
     const existing = logs.find(l => l.prayer === prayerName);
+    const nowCompleted = !existing;
+    const timeStr = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' });
+
+    // Optimistic UI update
     let updated: PrayerLog[];
     if (existing) {
       updated = logs.filter(l => l.prayer !== prayerName);
     } else {
       updated = [...logs, {
-        id: generateId(),
+        id: '',
         date: today,
         prayer: prayerName,
         completed: true,
         onTime: true,
-        time: new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }),
+        time: timeStr,
       }];
     }
     setLogs(updated);
-    saveToStorage(user.id, `prayer:${today}`, updated);
+
+    // Sync to backend
+    api.prayer.upsert({
+      date: today,
+      prayer: prayerName as string,
+      completed: nowCompleted,
+      on_time: nowCompleted,
+      time: nowCompleted ? timeStr : '',
+    }).catch(() => {});
   };
 
   const completedCount = logs.filter(l => l.completed).length;
