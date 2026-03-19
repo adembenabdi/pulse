@@ -342,4 +342,19 @@ export const api = {
     generate: (type: 'weekly' | 'monthly', period_start: string, period_end: string) =>
       request<Record<string, unknown>>('/reports/generate', { method: 'POST', body: JSON.stringify({ type, period_start, period_end }) }),
   },
+
+  // ── Resources ──
+  resources: {
+    get: (category?: string) => request<Record<string, unknown>[]>(`/resources${category ? `?category=${category}` : ''}`),
+    create: (data: Record<string, unknown>) =>
+      request<Record<string, unknown>>('/resources', { method: 'POST', body: JSON.stringify(data) }),
+    update: (id: string, data: Record<string, unknown>) =>
+      request<Record<string, unknown>>(`/resources/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    delete: (id: string) => request<{ message: string }>(`/resources/${id}`, { method: 'DELETE' }),
+    restore: (id: string) => request<Record<string, unknown>>(`/resources/${id}/restore`, { method: 'POST' }),
+    extract: (url: string) =>
+      request<{ title: string; description: string; url: string; source_url: string; category: string; tags: string[] }>(
+        '/resources/extract', { method: 'POST', body: JSON.stringify({ url }) }
+      ),
+  },
 };

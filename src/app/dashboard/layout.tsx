@@ -10,7 +10,7 @@ import {
   LayoutDashboard, Calendar, CalendarDays, CheckSquare, Moon, Dumbbell, UtensilsCrossed,
   BookOpen, Code, Briefcase, GraduationCap, Wallet, Target, BookHeart,
   PenLine, Settings, LogOut, Sun, MoonStar, ChevronLeft, ChevronRight,
-  Menu, X, Sparkles, User, Lightbulb, Users, BookOpenCheck, BarChart3, Timer
+  Menu, X, Sparkles, User, Lightbulb, Users, BookOpenCheck, BarChart3, Timer, Library
 } from 'lucide-react';
 import AssistantWidget from '@/components/AssistantWidget';
 
@@ -33,6 +33,7 @@ const NAV_SECTIONS = [
       { href: '/dashboard/study', icon: GraduationCap, label: 'Study' },
       { href: '/dashboard/work', icon: Code, label: 'Work' },
       { href: '/dashboard/ideas', icon: Lightbulb, label: 'Ideas Lab' },
+      { href: '/dashboard/resources', icon: Library, label: 'Resources' },
       { href: '/dashboard/schedule', icon: Calendar, label: 'Schedule' },
     ],
   },
