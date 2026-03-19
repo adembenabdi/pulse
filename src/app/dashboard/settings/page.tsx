@@ -57,8 +57,14 @@ export default function SettingsPage() {
   // Dashboard widgets
   const [widgets, setWidgets] = useState<DashboardWidget[]>(() => {
     const saved = user?.dashboardWidgets;
-    if (saved && saved.length > 0) {
-      return saved.map((w, i) => ({ ...w, id: w.id || `w-${w.type}-${i}` }));
+    if (saved && saved.length > 0 && saved[0]?.type) {
+      // Merge: keep saved config but add any new widget types that were added later
+      const savedTypes = new Set(saved.map(w => w.type));
+      const merged = saved.map((w, i) => ({ ...w, id: w.id || `w-${w.type}-${i}` }));
+      DEFAULT_WIDGETS.forEach(dw => {
+        if (!savedTypes.has(dw.type)) merged.push(dw);
+      });
+      return merged;
     }
     return DEFAULT_WIDGETS;
   });
