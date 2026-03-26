@@ -101,6 +101,7 @@ export default function CalendarPage() {
   const [activeFilters, setActiveFilters] = useState<Set<string>>(new Set(Object.keys(EVENT_CATEGORIES)));
   const [islamicHolidays, setIslamicHolidays] = useState<CalendarEvent[]>([]);
   const [friendBirthdays, setFriendBirthdays] = useState<CalendarEvent[]>([]);
+  const [studyExams, setStudyExams] = useState<CalendarEvent[]>([]);
 
   const [form, setForm] = useState({
     title: '', date: '', start_time: '', end_time: '',
@@ -165,9 +166,42 @@ export default function CalendarPage() {
     return () => { cancelled = true; };
   }, [user, currentYear]);
 
+  // Fetch study exams
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    api.study.exams.get().then(data => {
+      if (cancelled) return;
+      const typeLabels: Record<string, { label: string; icon: string; color: string }> = {
+        tp_test: { label: 'TP Test', icon: '🧪', color: '#06B6D4' },
+        td_test: { label: 'TD Test', icon: '📝', color: '#FBBF24' },
+        exam: { label: 'EMD', icon: '📋', color: '#F87171' },
+        project: { label: 'Project', icon: '💻', color: '#8B5CF6' },
+        presentation: { label: 'Presentation', icon: '🎤', color: '#34D399' },
+      };
+      setStudyExams(data.map((e: Record<string, unknown>) => {
+        const examType = (e.exam_type || 'exam') as string;
+        const cfg = typeLabels[examType] || typeLabels.exam;
+        return {
+          id: `exam-${e.id}`,
+          title: `${cfg.icon} ${e.title} (${e.course_name})`,
+          date: e.date as string,
+          start_time: (e.start_time || null) as string | null,
+          end_time: null,
+          category: 'university',
+          color: cfg.color,
+          description: (e.notes || '') as string,
+          all_day: !e.start_time,
+          isHoliday: true, // prevents editing/deleting via calendar UI
+        };
+      }));
+    }).catch(() => { /* silent */ });
+    return () => { cancelled = true; };
+  }, [user]);
+
   const holidays = useMemo(() => getBuiltInHolidays(currentYear), [currentYear]);
 
-  // Merge user events + static holidays + Islamic holidays + birthdays
+  // Merge user events + static holidays + Islamic holidays + birthdays + exams
   const allEvents = useMemo(() => {
     const merged = [...events];
     holidays.forEach(h => {
@@ -185,8 +219,13 @@ export default function CalendarPage() {
         merged.push(h);
       }
     });
+    studyExams.forEach(e => {
+      if (e.date.startsWith(monthStr)) {
+        merged.push(e);
+      }
+    });
     return merged.filter(e => activeFilters.has(e.category));
-  }, [events, holidays, islamicHolidays, friendBirthdays, monthStr, activeFilters]);
+  }, [events, holidays, islamicHolidays, friendBirthdays, studyExams, monthStr, activeFilters]);
 
   const eventsByDate = useMemo(() => {
     const map: Record<string, CalendarEvent[]> = {};

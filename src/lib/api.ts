@@ -135,6 +135,33 @@ export const api = {
         request<Record<string, unknown>>(`/study/sessions/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
       delete: (id: string) => request<{ message: string }>(`/study/sessions/${id}`, { method: 'DELETE' }),
     },
+    chapters: {
+      get: (course_name?: string) =>
+        request<Record<string, unknown>[]>(`/study/chapters${course_name ? `?course_name=${encodeURIComponent(course_name)}` : ''}`),
+      create: (data: { course_name: string; title: string; order_index?: number }) =>
+        request<Record<string, unknown>>('/study/chapters', { method: 'POST', body: JSON.stringify(data) }),
+      update: (id: string, data: Record<string, unknown>) =>
+        request<Record<string, unknown>>(`/study/chapters/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+      delete: (id: string) => request<{ message: string }>(`/study/chapters/${id}`, { method: 'DELETE' }),
+      addTask: (chapterId: string, title: string, taskType?: string) =>
+        request<Record<string, unknown>>(`/study/chapters/${chapterId}/tasks`, { method: 'POST', body: JSON.stringify({ title, task_type: taskType || 'custom' }) }),
+    },
+    chapterTasks: {
+      update: (id: string, data: Record<string, unknown>) =>
+        request<Record<string, unknown>>(`/study/chapter-tasks/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+      delete: (id: string) => request<{ message: string }>(`/study/chapter-tasks/${id}`, { method: 'DELETE' }),
+    },
+    exams: {
+      get: (params?: { from?: string; to?: string; course_name?: string }) => {
+        const qs = new URLSearchParams(params as Record<string, string>).toString();
+        return request<Record<string, unknown>[]>(`/study/exams${qs ? `?${qs}` : ''}`);
+      },
+      create: (data: Record<string, unknown>) =>
+        request<Record<string, unknown>>('/study/exams', { method: 'POST', body: JSON.stringify(data) }),
+      update: (id: string, data: Record<string, unknown>) =>
+        request<Record<string, unknown>>(`/study/exams/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+      delete: (id: string) => request<{ message: string }>(`/study/exams/${id}`, { method: 'DELETE' }),
+    },
   },
 
   // ── Finance ──

@@ -4,9 +4,9 @@ import { useState, useEffect, Fragment, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/context/AuthContext';
 import { Card, Badge, Button, PageHeader, StatCard } from '@/components/ui/primitives';
-import { CalendarDays, ChevronLeft, ChevronRight, Clock, RefreshCw } from 'lucide-react';
+import { CalendarDays, ChevronLeft, ChevronRight, Clock, RefreshCw, AlertTriangle, MapPin } from 'lucide-react';
 import { api } from '@/lib/api';
-import type { Course } from '@/types';
+import type { Course, StudyExam } from '@/types';
 import { format, addDays, startOfWeek, isSameDay } from 'date-fns';
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -22,6 +22,7 @@ export default function SchedulePage() {
   const [syncing, setSyncing] = useState(false);
   const [lastSync, setLastSync] = useState<string | null>(null);
   const [syncMessage, setSyncMessage] = useState('');
+  const [exams, setExams] = useState<StudyExam[]>([]);
 
   const fetchCourses = useCallback(async () => {
     try {
@@ -50,11 +51,28 @@ export default function SchedulePage() {
     } catch { /* ignore */ }
   }, []);
 
+  const fetchExams = useCallback(async () => {
+    try {
+      const data = await api.study.exams.get();
+      setExams(data.map((e: Record<string, unknown>) => ({
+        id: e.id as string,
+        courseName: e.course_name as string,
+        title: e.title as string,
+        examType: (e.exam_type || 'exam') as StudyExam['examType'],
+        date: e.date as string,
+        startTime: (e.start_time || null) as string | null,
+        room: (e.room || '') as string,
+        notes: (e.notes || '') as string,
+      })));
+    } catch { /* ignore */ }
+  }, []);
+
   useEffect(() => {
     if (!user) return;
     fetchCourses();
     fetchStatus();
-  }, [user, fetchCourses, fetchStatus]);
+    fetchExams();
+  }, [user, fetchCourses, fetchStatus, fetchExams]);
 
   const handleSync = async () => {
     setSyncing(true);
@@ -85,6 +103,8 @@ export default function SchedulePage() {
 
   const todayIdx = new Date().getDay();
   const todayCourses = courses.filter(c => c.day === todayIdx);
+  const todayStr = format(new Date(), 'yyyy-MM-dd');
+  const upcomingExams = exams.filter(e => e.date >= todayStr).sort((a, b) => a.date.localeCompare(b.date)).slice(0, 5);
 
   const getCoursesForDay = (dayIdx: number) =>
     courses.filter(c => c.day === dayIdx).sort((a, b) => a.startTime.localeCompare(b.startTime));
@@ -212,6 +232,52 @@ export default function SchedulePage() {
               ))}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Upcoming exams banner */}
+      {upcomingExams.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs font-semibold text-[var(--foreground-muted)] uppercase tracking-wider">Upcoming Exams</p>
+          {upcomingExams.map(exam => {
+            const daysUntil = Math.ceil((new Date(exam.date + 'T00:00:00').getTime() - new Date().setHours(0,0,0,0)) / 86400000);
+            const moduleColor = courses.find(c => c.name.toLowerCase() === exam.courseName.toLowerCase())?.color || '#F87171';
+            const typeLabels: Record<string, { label: string; icon: string; color: string }> = {
+              tp_test: { label: 'TP Test', icon: '🧪', color: '#06B6D4' },
+              td_test: { label: 'TD Test', icon: '📝', color: '#FBBF24' },
+              exam: { label: 'EMD', icon: '📋', color: '#F87171' },
+              project: { label: 'Project', icon: '💻', color: '#8B5CF6' },
+              presentation: { label: 'Presentation', icon: '🎤', color: '#34D399' },
+            };
+            const examCfg = typeLabels[exam.examType] || typeLabels.exam;
+            return (
+              <motion.div key={exam.id} initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }}>
+                <Card variant="elevated" className="p-3" style={{ borderLeftWidth: 3, borderLeftColor: moduleColor }}>
+                  <div className="flex items-center gap-3">
+                    <AlertTriangle className={`w-4 h-4 flex-shrink-0 ${daysUntil <= 3 ? 'text-red-400' : daysUntil <= 7 ? 'text-yellow-400' : 'text-[var(--foreground-muted)]'}`} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-sm font-semibold text-[var(--foreground)]">{exam.title}</p>
+                        <Badge variant={daysUntil <= 3 ? 'danger' : daysUntil <= 7 ? 'warning' : 'outline'}>
+                          {daysUntil === 0 ? 'Today!' : daysUntil === 1 ? 'Tomorrow' : `in ${daysUntil} days`}
+                        </Badge>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium" style={{ background: `${examCfg.color}20`, color: examCfg.color }}>
+                          {examCfg.icon} {examCfg.label}
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 mt-0.5 text-xs text-[var(--foreground-muted)]">
+                        <span>{exam.courseName}</span>
+                        <span>•</span>
+                        <span>{format(new Date(exam.date + 'T00:00:00'), 'EEE, MMM d')}</span>
+                        {exam.startTime && <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> {exam.startTime}</span>}
+                        {exam.room && <span className="flex items-center gap-1"><MapPin className="w-3 h-3" /> {exam.room}</span>}
+                      </div>
+                    </div>
+                  </div>
+                </Card>
+              </motion.div>
+            );
+          })}
         </div>
       )}
     </div>

@@ -167,6 +167,7 @@ export interface Course {
   endTime: string;
   type: 'lecture' | 'td' | 'tp' | 'exam';
   sourceId?: string | null; // non-null = synced from timetable
+  semester?: string | null; // 'S1', 'S2', etc.
 }
 
 export interface StudySession {
@@ -179,6 +180,38 @@ export interface StudySession {
   topic: string;
   notes: string;
   completed: boolean;
+}
+
+export type TaskType = 'study' | 'td' | 'tp' | 'review' | 'custom';
+
+export interface ChapterTask {
+  id: string;
+  chapterId: string;
+  title: string;
+  taskType: TaskType;
+  isPreset: boolean;
+  completed: boolean;
+}
+
+export interface ModuleChapter {
+  id: string;
+  courseName: string;
+  title: string;
+  orderIndex: number;
+  tasks: ChapterTask[];
+}
+
+export type ExamType = 'tp_test' | 'td_test' | 'exam' | 'project' | 'presentation';
+
+export interface StudyExam {
+  id: string;
+  courseName: string;
+  title: string;
+  examType: ExamType;
+  date: string;
+  startTime?: string | null;
+  room: string;
+  notes: string;
 }
 
 // ── Finance ───────────────────────────────

@@ -52,6 +52,7 @@ export default function DashboardPage() {
   const [pomodoroToday, setPomodoroToday] = useState(0);
   const [activeGoals, setActiveGoals] = useState(0);
   const [upcomingEvents, setUpcomingEvents] = useState(0);
+  const [nextExam, setNextExam] = useState<{ title: string; courseName: string; examType: string; date: string; daysUntil: number } | null>(null);
 
   const widgets = useMemo(() => {
     const cfg = user?.dashboardWidgets;
@@ -129,6 +130,22 @@ export default function DashboardPage() {
               .slice(0, 4)
               .map(c => ({ id: c.id, name: c.name, startTime: c.start_time, endTime: c.end_time, room: c.room, color: c.color, type: c.type }));
             setTodayCourses(filtered);
+          }).catch(() => {})
+        );
+
+        // Fetch upcoming exams for countdown
+        promises.push(
+          api.study.exams.get().then((data: Record<string, unknown>[]) => {
+            const todayDate = new Date();
+            todayDate.setHours(0, 0, 0, 0);
+            const upcoming = (data as { title: string; course_name: string; exam_type?: string; date: string }[])
+              .filter(e => new Date(e.date + 'T00:00:00') >= todayDate)
+              .sort((a, b) => a.date.localeCompare(b.date));
+            if (upcoming.length > 0) {
+              const e = upcoming[0];
+              const daysUntil = Math.ceil((new Date(e.date + 'T00:00:00').getTime() - todayDate.getTime()) / 86400000);
+              setNextExam({ title: e.title, courseName: e.course_name, examType: e.exam_type || 'exam', date: e.date, daysUntil });
+            }
           }).catch(() => {})
         );
       }
@@ -297,6 +314,30 @@ export default function DashboardPage() {
               </Card>
             ))}
           </div>
+        </motion.div>
+      )}
+
+      {/* Next Exam Countdown */}
+      {isVisible('study') && nextExam && (
+        <motion.div variants={item}>
+          <Link href="/dashboard/study">
+            <Card variant="elevated" depth className="p-4 group cursor-pointer hover:scale-[1.01] transition-transform" style={{ borderLeftWidth: 3, borderLeftColor: nextExam.daysUntil <= 3 ? '#F87171' : nextExam.daysUntil <= 7 ? '#FBBF24' : '#A855F7' }}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: nextExam.daysUntil <= 3 ? 'rgba(248,113,113,0.15)' : nextExam.daysUntil <= 7 ? 'rgba(251,191,36,0.15)' : 'rgba(168,85,247,0.15)' }}>
+                    <Target className="w-5 h-5" style={{ color: nextExam.daysUntil <= 3 ? '#F87171' : nextExam.daysUntil <= 7 ? '#FBBF24' : '#A855F7' }} />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-[var(--foreground)]">{nextExam.title}</p>
+                    <p className="text-xs text-[var(--foreground-muted)]">{nextExam.courseName} • {format(new Date(nextExam.date + 'T00:00:00'), 'EEE, MMM d')}</p>
+                  </div>
+                </div>
+                <Badge variant={nextExam.daysUntil <= 3 ? 'danger' : nextExam.daysUntil <= 7 ? 'warning' : 'primary'}>
+                  {nextExam.daysUntil === 0 ? 'Today!' : nextExam.daysUntil === 1 ? 'Tomorrow' : `${nextExam.daysUntil}d`}
+                </Badge>
+              </div>
+            </Card>
+          </Link>
         </motion.div>
       )}
 
