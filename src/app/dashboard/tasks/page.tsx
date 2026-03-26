@@ -159,6 +159,7 @@ export default function TasksPage() {
         tabs={[
           { id: 'all', label: 'All', count: tasks.filter(t => t.status !== 'completed').length + pendingStudyTasks.length },
           { id: 'personal', label: 'Personal' },
+          { id: 'study', label: 'Study', count: pendingStudyTasks.length + globalStudyTasks.length },
           { id: 'work', label: 'Work' },
           { id: 'club', label: 'Club' },
         ]}
