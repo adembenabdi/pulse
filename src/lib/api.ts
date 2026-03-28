@@ -413,5 +413,35 @@ export const api = {
         request<Record<string, unknown>>(`/meetings/tasks/${taskId}`, { method: 'PUT', body: JSON.stringify(data) }),
       delete: (taskId: string) => request<{ message: string }>(`/meetings/tasks/${taskId}`, { method: 'DELETE' }),
     },
+    participants: {
+      get: (meetingId: string) => request<Record<string, unknown>[]>(`/meetings/${meetingId}/participants`),
+      update: (meetingId: string, friendIds: string[]) =>
+        request<Record<string, unknown>>(`/meetings/${meetingId}/participants`, { method: 'PUT', body: JSON.stringify({ friend_ids: friendIds }) }),
+    },
+    templates: {
+      get: () => request<Record<string, unknown>[]>('/meetings/user/templates'),
+      create: (data: Record<string, unknown>) =>
+        request<Record<string, unknown>>('/meetings/user/templates', { method: 'POST', body: JSON.stringify(data) }),
+      delete: (id: string) => request<{ message: string }>(`/meetings/user/templates/${id}`, { method: 'DELETE' }),
+    },
+  },
+
+  // ── Sleep ──
+  sleep: {
+    get: (params?: { date?: string; from?: string; to?: string }) => {
+      const qs = new URLSearchParams(params as Record<string, string>).toString();
+      return request<Record<string, unknown>[]>(`/sleep${qs ? `?${qs}` : ''}`);
+    },
+    stats: () => request<Record<string, unknown>>('/sleep/stats'),
+    create: (data: Record<string, unknown>) =>
+      request<Record<string, unknown>>('/sleep', { method: 'POST', body: JSON.stringify(data) }),
+    update: (id: string, data: Record<string, unknown>) =>
+      request<Record<string, unknown>>(`/sleep/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    delete: (id: string) => request<{ message: string }>(`/sleep/${id}`, { method: 'DELETE' }),
+  },
+
+  // ── Streaks ──
+  streaks: {
+    get: () => request<Record<string, unknown>>('/streaks'),
   },
 };

@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/context/AuthContext';
 import { Card, Badge, Button, PageHeader, Input, Label, Select, Modal, Tabs, StatCard, EmptyState } from '@/components/ui/primitives';
-import { Wallet, Plus, TrendingUp, TrendingDown, ArrowUpCircle, ArrowDownCircle, Trash2, Calendar, PieChart, Target, AlertTriangle } from 'lucide-react';
+import { Wallet, Plus, TrendingUp, TrendingDown, ArrowUpCircle, ArrowDownCircle, Trash2, Calendar, PieChart, Target, AlertTriangle, Users } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useUndoDelete } from '@/hooks/useUndoDelete';
 import type { TransactionType, ExpenseCategory, IncomeCategory } from '@/types';
@@ -26,6 +26,11 @@ interface BudgetItem {
   category: string;
   limit_amount: number;
   actual?: number;
+}
+
+interface FriendItem {
+  id: string;
+  name: string;
 }
 
 const EXPENSE_CATEGORIES: Record<ExpenseCategory, { label: string; emoji: string }> = {
@@ -62,8 +67,10 @@ export default function FinancePage() {
     type: 'expense' as TransactionType,
     amount: '', category: 'food' as string,
     description: '',
+    friend_ids: [] as string[],
   });
   const [budgetForm, setBudgetForm] = useState({ category: 'food', limit: '' });
+  const [friends, setFriends] = useState<FriendItem[]>([]);
 
   const currentMonth = format(new Date(), 'yyyy-MM');
 
@@ -81,7 +88,10 @@ export default function FinancePage() {
   }, [currentMonth]);
 
   useEffect(() => {
-    if (user) load();
+    if (user) {
+      load();
+      api.friends.get().then(d => setFriends(d as unknown as FriendItem[])).catch(() => {});
+    }
   }, [user, load]);
 
   const { triggerDelete } = useUndoDelete({
@@ -99,10 +109,11 @@ export default function FinancePage() {
         category: newTx.category,
         description: newTx.description.trim(),
         date: format(new Date(), 'yyyy-MM-dd'),
+        friend_ids: newTx.friend_ids,
       });
       await load();
       setShowAdd(false);
-      setNewTx({ type: 'expense', amount: '', category: 'food', description: '' });
+      setNewTx({ type: 'expense', amount: '', category: 'food', description: '', friend_ids: [] });
     } catch { /* silent */ }
   };
 
@@ -392,6 +403,36 @@ export default function FinancePage() {
             <Label>Description</Label>
             <Input placeholder="What was it for?" value={newTx.description} onChange={e => setNewTx(m => ({ ...m, description: e.target.value }))} />
           </div>
+          {/* Friend tagging */}
+          {friends.length > 0 && (
+            <div>
+              <Label className="flex items-center gap-1"><Users className="w-3 h-3" /> Who was there?</Label>
+              <div className="flex flex-wrap gap-2 mt-1">
+                {friends.map(f => {
+                  const selected = newTx.friend_ids.includes(f.id);
+                  return (
+                    <button
+                      key={f.id}
+                      type="button"
+                      onClick={() => setNewTx(prev => ({
+                        ...prev,
+                        friend_ids: selected
+                          ? prev.friend_ids.filter(x => x !== f.id)
+                          : [...prev.friend_ids, f.id],
+                      }))}
+                      className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
+                        selected
+                          ? 'bg-[var(--primary)]/20 border-[var(--primary)] text-[var(--primary)]'
+                          : 'border-[var(--border)] text-[var(--foreground-muted)] hover:border-[var(--card-border-hover)]'
+                      }`}
+                    >
+                      {selected ? '✓ ' : ''}{f.name}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="ghost" onClick={() => setShowAdd(false)}>Cancel</Button>
             <Button onClick={addTransaction} disabled={!newTx.amount}>Add</Button>

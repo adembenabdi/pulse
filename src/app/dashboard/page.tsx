@@ -10,6 +10,7 @@ import {
   Sun, Moon, Cloud, BookOpen, Dumbbell, UtensilsCrossed,
   GraduationCap, Wallet, Target, CheckSquare,
   ChevronRight, Flame, Sparkles, CalendarDays, Timer, BookOpenCheck,
+  Handshake, BedDouble, Award,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import Link from 'next/link';
@@ -53,6 +54,9 @@ export default function DashboardPage() {
   const [activeGoals, setActiveGoals] = useState(0);
   const [upcomingEvents, setUpcomingEvents] = useState(0);
   const [nextExam, setNextExam] = useState<{ title: string; courseName: string; examType: string; date: string; daysUntil: number } | null>(null);
+  const [upcomingMeetings, setUpcomingMeetings] = useState<{ id: string; title: string; date: string; start_time?: string; location?: string }[]>([]);
+  const [sleepLastNight, setSleepLastNight] = useState<number | null>(null);
+  const [streaks, setStreaks] = useState<{ streaks: Record<string, { current: number; longest: number }>; badges: { area: string; badge: string; threshold: number }[] } | null>(null);
 
   const widgets = useMemo(() => {
     const cfg = user?.dashboardWidgets;
@@ -199,6 +203,37 @@ export default function DashboardPage() {
         );
       }
 
+      // Meetings
+      promises.push(
+        api.meetings.get().then((data: Record<string, unknown>[]) => {
+          const upcoming = (data as { id: string; title: string; date: string; start_time?: string; location?: string; status: string }[])
+            .filter(m => m.date >= today && m.status === 'upcoming')
+            .sort((a, b) => a.date.localeCompare(b.date))
+            .slice(0, 3);
+          setUpcomingMeetings(upcoming);
+        }).catch(() => {})
+      );
+
+      // Sleep
+      promises.push(
+        api.sleep.get({ date: today }).then((data: Record<string, unknown>[]) => {
+          // Check yesterday too
+          const yesterday = format(new Date(Date.now() - 86400000), 'yyyy-MM-dd');
+          return api.sleep.get({ date: yesterday }).then((yData: Record<string, unknown>[]) => {
+            const allLogs = [...(data as { duration_minutes?: number; is_nap: boolean }[]), ...(yData as { duration_minutes?: number; is_nap: boolean }[])];
+            const sleepLog = allLogs.find(l => !l.is_nap);
+            if (sleepLog?.duration_minutes) setSleepLastNight(sleepLog.duration_minutes);
+          });
+        }).catch(() => {})
+      );
+
+      // Streaks
+      promises.push(
+        api.streaks.get().then((data: Record<string, unknown>) => {
+          setStreaks(data as { streaks: Record<string, { current: number; longest: number }>; badges: { area: string; badge: string; threshold: number }[] });
+        }).catch(() => {})
+      );
+
       await Promise.all(promises);
     };
     load();
@@ -220,6 +255,8 @@ export default function DashboardPage() {
     pomodoro: { icon: <Timer className="w-5 h-5" />, value: `${pomodoroToday}`, label: 'Focus Today', href: '/dashboard/study', color: 'var(--danger)' },
     goals: { icon: <Target className="w-5 h-5" />, value: `${activeGoals}`, label: 'Goals', href: '/dashboard/goals', color: 'var(--violet, var(--primary))' },
     calendar: { icon: <CalendarDays className="w-5 h-5" />, value: `${upcomingEvents}`, label: 'Events', href: '/dashboard/calendar', color: 'var(--cyan, var(--primary))' },
+    meetings: { icon: <Handshake className="w-5 h-5" />, value: `${upcomingMeetings.length}`, label: 'Meetings', href: '/dashboard/meetings', color: '#F59E0B' },
+    sleep: { icon: <BedDouble className="w-5 h-5" />, value: sleepLastNight ? `${Math.floor(sleepLastNight / 60)}h` : '--', label: 'Sleep', href: '/dashboard/sleep', color: '#818CF8' },
   };
 
   // Determine visible stat widgets in configured order
@@ -291,7 +328,36 @@ export default function DashboardPage() {
         </motion.div>
       )}
 
-      {/* Today's classes */}
+      {/* Streaks & Badges */}
+      {streaks && Object.keys(streaks.streaks).length > 0 && (
+        <motion.div variants={item}>
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-sm font-bold text-[var(--foreground)] flex items-center gap-2">
+              <Flame className="w-4 h-4 text-orange-500" /> Streaks
+            </h3>
+          </div>
+          <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
+            {Object.entries(streaks.streaks).map(([area, s]) => (
+              <Card key={area} variant="default" className="p-3 text-center">
+                <p className="text-lg font-bold text-[var(--foreground)]">{s.current}<span className="text-xs text-[var(--foreground-muted)]">d</span></p>
+                <p className="text-[10px] text-[var(--foreground-muted)] capitalize">{area}</p>
+                {s.current >= 3 && <Flame className="w-3 h-3 text-orange-500 mx-auto mt-1" />}
+              </Card>
+            ))}
+          </div>
+          {streaks.badges.length > 0 && (
+            <div className="flex flex-wrap gap-2 mt-2">
+              {streaks.badges.map((b, i) => (
+                <Badge key={i} variant="primary" size="sm" className="flex items-center gap-1">
+                  <Award className="w-3 h-3" /> {b.badge} — {b.area}
+                </Badge>
+              ))}
+            </div>
+          )}
+        </motion.div>
+      )}
+
+      {/* Today&apos;s classes */}
       {isVisible('study') && todayCourses.length > 0 && (
         <motion.div variants={item}>
           <div className="flex items-center justify-between mb-2">
@@ -382,6 +448,38 @@ export default function DashboardPage() {
               </div>
             </Card>
           </Link>
+        </motion.div>
+      )}
+
+      {/* Upcoming Meetings */}
+      {upcomingMeetings.length > 0 && (
+        <motion.div variants={item}>
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-sm font-bold text-[var(--foreground)] flex items-center gap-2">
+              <Handshake className="w-4 h-4 text-amber-400" /> Upcoming Meetings
+            </h3>
+            <Link href="/dashboard/meetings" className="text-xs text-[var(--primary)] hover:underline">See all</Link>
+          </div>
+          <div className="space-y-2">
+            {upcomingMeetings.map(m => (
+              <Link key={m.id} href="/dashboard/meetings">
+                <Card variant="default" className="p-3 hover:scale-[1.01] transition-transform cursor-pointer">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-[var(--foreground)]">{m.title}</p>
+                      <p className="text-xs text-[var(--foreground-muted)]">
+                        {m.date === today ? '🔴 Today' : m.date}
+                        {m.start_time ? ` • ${m.start_time.slice(0, 5)}` : ''}
+                      </p>
+                    </div>
+                    {m.location && (
+                      <Badge variant="outline" size="sm">{m.location}</Badge>
+                    )}
+                  </div>
+                </Card>
+              </Link>
+            ))}
+          </div>
         </motion.div>
       )}
 

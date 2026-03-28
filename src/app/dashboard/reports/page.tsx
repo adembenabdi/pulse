@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/context/AuthContext';
 import { Card, Badge, Button, PageHeader, StatCard, EmptyState, Select, Label } from '@/components/ui/primitives';
-import { BarChart3, FileText, Calendar, TrendingUp, RefreshCw } from 'lucide-react';
+import { BarChart3, FileText, Calendar, TrendingUp, RefreshCw, Brain } from 'lucide-react';
 import { api } from '@/lib/api';
 import { format, subDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns';
 import toast from 'react-hot-toast';
@@ -18,11 +18,20 @@ interface Report {
   created_at: string;
 }
 
+interface MoodCorrelation {
+  factor: string;
+  avgMoodWith: number;
+  avgMoodWithout: number;
+  daysWith: number;
+  impact: number;
+}
+
 export default function ReportsPage() {
   const { user } = useAuth();
   const [reports, setReports] = useState<Report[]>([]);
   const [selectedReport, setSelectedReport] = useState<Report | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [correlations, setCorrelations] = useState<MoodCorrelation[]>([]);
 
   const load = useCallback(async () => {
     if (!user) return;
@@ -33,6 +42,71 @@ export default function ReportsPage() {
   }, [user]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Mood correlations — cross-reference journal mood with sport, prayer, sleep
+  useEffect(() => {
+    if (!user) return;
+    const computeCorrelations = async () => {
+      try {
+        const from = format(subDays(new Date(), 30), 'yyyy-MM-dd');
+        const to = format(new Date(), 'yyyy-MM-dd');
+        const [journals, sports, prayers, sleepLogs] = await Promise.all([
+          api.journal.get({ from, to }),
+          api.sport.get(),
+          api.prayer.get(),
+          api.sleep.get({ from, to }),
+        ]);
+
+        // Build day→mood map from journal entries
+        const moodMap: Record<string, number> = {};
+        const MOOD_SCORES: Record<string, number> = { great: 5, good: 4, okay: 3, bad: 2, terrible: 1 };
+        (journals as { date: string; mood?: string }[]).forEach(j => {
+          if (j.mood && MOOD_SCORES[j.mood]) moodMap[j.date] = MOOD_SCORES[j.mood];
+        });
+
+        const moodDates = Object.keys(moodMap);
+        if (moodDates.length < 3) { setCorrelations([]); return; }
+
+        // Sport days
+        const sportDays = new Set((sports as { date: string }[]).map(s => s.date));
+        // Prayer complete days (5/5)
+        const prayerByDate: Record<string, number> = {};
+        (prayers as { date: string; completed?: boolean }[]).forEach(p => {
+          if (p.completed) prayerByDate[p.date] = (prayerByDate[p.date] || 0) + 1;
+        });
+        const prayerDays = new Set(Object.entries(prayerByDate).filter(([, v]) => v >= 5).map(([d]) => d));
+        // Good sleep days (>= 7h)
+        const sleepDays = new Set(
+          (sleepLogs as { date: string; duration_minutes?: number; is_nap: boolean }[])
+            .filter(s => !s.is_nap && (s.duration_minutes || 0) >= 420)
+            .map(s => s.date)
+        );
+
+        const factors = [
+          { factor: 'Exercise', dataset: sportDays },
+          { factor: 'All Prayers', dataset: prayerDays },
+          { factor: 'Good Sleep (7h+)', dataset: sleepDays },
+        ];
+
+        const results: MoodCorrelation[] = [];
+        for (const { factor, dataset } of factors) {
+          const withMoods = moodDates.filter(d => dataset.has(d)).map(d => moodMap[d]);
+          const withoutMoods = moodDates.filter(d => !dataset.has(d)).map(d => moodMap[d]);
+          const avgWith = withMoods.length > 0 ? withMoods.reduce((a, b) => a + b, 0) / withMoods.length : 0;
+          const avgWithout = withoutMoods.length > 0 ? withoutMoods.reduce((a, b) => a + b, 0) / withoutMoods.length : 0;
+          results.push({
+            factor,
+            avgMoodWith: Math.round(avgWith * 10) / 10,
+            avgMoodWithout: Math.round(avgWithout * 10) / 10,
+            daysWith: withMoods.length,
+            impact: Math.round((avgWith - avgWithout) * 10) / 10,
+          });
+        }
+        setCorrelations(results);
+      } catch { /* ignore */ }
+    };
+    computeCorrelations();
+  }, [user]);
 
   const generateReport = async (type: 'weekly' | 'monthly') => {
     setGenerating(true);
@@ -92,6 +166,46 @@ export default function ReportsPage() {
           </Button>
         </div>
       </PageHeader>
+
+      {/* Mood Correlations */}
+      {correlations.length > 0 && (
+        <Card variant="elevated" className="p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <Brain className="w-5 h-5 text-[var(--violet)]" />
+            <h3 className="text-sm font-bold text-[var(--foreground)]">Mood Correlations (30 days)</h3>
+          </div>
+          <div className="space-y-3">
+            {correlations.map(c => (
+              <div key={c.factor} className="flex items-center gap-4">
+                <div className="w-32 text-xs font-medium text-[var(--foreground)]">{c.factor}</div>
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 h-2 rounded-full bg-[var(--background-surface)] overflow-hidden">
+                      <div
+                        className="h-full rounded-full"
+                        style={{
+                          width: `${(c.avgMoodWith / 5) * 100}%`,
+                          backgroundColor: c.impact > 0 ? 'var(--success)' : 'var(--warning)',
+                        }}
+                      />
+                    </div>
+                    <span className="text-xs font-bold text-[var(--foreground)] w-8">{c.avgMoodWith}</span>
+                  </div>
+                  <p className="text-[10px] text-[var(--foreground-muted)] mt-0.5">
+                    {c.daysWith} days • {c.impact > 0 ? '+' : ''}{c.impact} mood impact
+                  </p>
+                </div>
+                <Badge variant={c.impact > 0 ? 'success' : c.impact < 0 ? 'danger' : 'outline'} size="sm">
+                  {c.impact > 0 ? 'Positive' : c.impact < 0 ? 'Negative' : 'Neutral'}
+                </Badge>
+              </div>
+            ))}
+          </div>
+          <p className="text-[10px] text-[var(--foreground-muted)] mt-3">
+            Compares your average mood on days with vs. without each activity. Log journal entries with mood to improve accuracy.
+          </p>
+        </Card>
+      )}
 
       {selectedReport ? (
         <div className="space-y-4">

@@ -7,7 +7,7 @@ import { Card, Badge, Button, PageHeader, Input, TextArea, Label, Select, Modal,
 import {
   Handshake, Plus, Trash2, Clock, MapPin, Bell, X, ChevronDown, ChevronUp,
   CheckSquare, Square, ListTodo, FileText, Sparkles, Send, RotateCcw, Loader2,
-  StickyNote, ClipboardList, Bot, Calendar,
+  StickyNote, ClipboardList, Bot, Calendar, Users, Repeat, Layout,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useUndoDelete } from '@/hooks/useUndoDelete';
@@ -35,6 +35,42 @@ interface MeetingTask {
   completed: boolean;
   source: 'manual' | 'ai';
 }
+
+interface Friend {
+  id: string;
+  name: string;
+  relationship?: string;
+}
+
+interface MeetingTemplate {
+  id: string;
+  name: string;
+  type: string;
+  default_location: string | null;
+  default_notes: string;
+  default_tasks: string[];
+}
+
+interface Participant {
+  friend_id: string;
+  name: string;
+}
+
+const RECURRING_OPTIONS = [
+  { value: '', label: 'No repeat' },
+  { value: 'daily', label: 'Daily' },
+  { value: 'weekly', label: 'Weekly' },
+  { value: 'biweekly', label: 'Every 2 weeks' },
+  { value: 'monthly', label: 'Monthly' },
+];
+
+const TEMPLATE_TYPES: Record<string, { label: string; icon: string }> = {
+  study: { label: 'Study', icon: '📚' },
+  club: { label: 'Club', icon: '🎯' },
+  work: { label: 'Work', icon: '💼' },
+  faculty: { label: 'Faculty', icon: '🏫' },
+  other: { label: 'Other', icon: '📋' },
+};
 
 const LOCATION_OPTIONS: Record<string, { label: string; icon: string }> = {
   local: { label: 'Local', icon: '🏠' },
@@ -80,7 +116,13 @@ export default function MeetingsPage() {
   const [form, setForm] = useState({
     title: '', date: '', start_time: '', end_time: '',
     location: '', notes: '', reminder: 'none',
+    recurring: '', participant_ids: [] as string[],
   });
+
+  // Friends & templates
+  const [friends, setFriends] = useState<Friend[]>([]);
+  const [templates, setTemplates] = useState<MeetingTemplate[]>([]);
+  const [participants, setParticipants] = useState<Record<string, Participant[]>>({});
 
   // Detail/report state
   const [meetingTasks, setMeetingTasks] = useState<Record<string, MeetingTask[]>>({});
@@ -108,7 +150,11 @@ export default function MeetingsPage() {
   });
 
   useEffect(() => {
-    if (user) loadMeetings();
+    if (user) {
+      loadMeetings();
+      api.friends.get().then(d => setFriends(d as unknown as Friend[])).catch(() => {});
+      api.meetings.templates.get().then(d => setTemplates(d as unknown as MeetingTemplate[])).catch(() => {});
+    }
   }, [user, loadMeetings]);
 
   const loadTasks = useCallback(async (meetingId: string) => {
@@ -133,14 +179,14 @@ export default function MeetingsPage() {
   };
 
   const resetForm = () => {
-    setForm({ title: '', date: '', start_time: '', end_time: '', location: '', notes: '', reminder: 'none' });
+    setForm({ title: '', date: '', start_time: '', end_time: '', location: '', notes: '', reminder: 'none', recurring: '', participant_ids: [] });
     setEditingId(null);
     setShowAdd(false);
   };
 
   const handleSave = async () => {
     if (!form.title.trim() || !form.date) return;
-    const payload = {
+    const payload: Record<string, unknown> = {
       title: form.title.trim(),
       date: form.date,
       start_time: form.start_time || null,
@@ -148,11 +194,16 @@ export default function MeetingsPage() {
       location: form.location || null,
       notes: form.notes.trim(),
       reminder_at: computeReminderAt(form.date, form.start_time, form.reminder),
+      recurring: form.recurring || null,
+      participant_ids: form.participant_ids,
     };
 
     try {
       if (editingId) {
         await api.meetings.update(editingId, payload);
+        if (form.participant_ids.length >= 0) {
+          await api.meetings.participants.update(editingId, form.participant_ids);
+        }
       } else {
         await api.meetings.create(payload);
       }
@@ -161,7 +212,7 @@ export default function MeetingsPage() {
     } catch { /* silent */ }
   };
 
-  const handleEdit = (m: Meeting) => {
+  const handleEdit = async (m: Meeting) => {
     setForm({
       title: m.title,
       date: m.date,
@@ -170,7 +221,14 @@ export default function MeetingsPage() {
       location: m.location || '',
       notes: m.notes || '',
       reminder: 'none',
+      recurring: (m as unknown as Record<string, string>).recurring || '',
+      participant_ids: [],
     });
+    // Load existing participants
+    try {
+      const p = await api.meetings.participants.get(m.id) as unknown as Participant[];
+      setForm(f => ({ ...f, participant_ids: p.map(x => x.friend_id) }));
+    } catch { /* silent */ }
     setEditingId(m.id);
     setShowAdd(true);
   };
@@ -378,6 +436,30 @@ export default function MeetingsPage() {
       {/* Add/Edit Modal */}
       <Modal isOpen={showAdd} onClose={resetForm} title={editingId ? 'Edit Meeting' : 'New Meeting'}>
         <div className="space-y-4">
+          {/* Template quick-fill */}
+          {!editingId && templates.length > 0 && (
+            <div>
+              <Label>From Template</Label>
+              <div className="flex flex-wrap gap-2 mt-1">
+                {templates.map(t => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => setForm(f => ({
+                      ...f,
+                      title: f.title || t.name,
+                      location: t.default_location || f.location,
+                      notes: t.default_notes || f.notes,
+                    }))}
+                    className="px-3 py-1.5 rounded-lg text-xs font-medium border border-[var(--border)] text-[var(--foreground-muted)] hover:border-[var(--primary)] hover:text-[var(--primary)] transition-all"
+                  >
+                    {TEMPLATE_TYPES[t.type]?.icon || '📋'} {t.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div>
             <Label>Title *</Label>
             <Input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="Team standup, 1-on-1 with Prof..." />
@@ -426,6 +508,49 @@ export default function MeetingsPage() {
               ))}
             </div>
           </div>
+
+          {/* Recurring */}
+          <div>
+            <Label className="flex items-center gap-1"><Repeat className="w-3 h-3" /> Recurring</Label>
+            <Select value={form.recurring} onChange={e => setForm(f => ({ ...f, recurring: e.target.value }))}>
+              {RECURRING_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </Select>
+          </div>
+
+          {/* Participants */}
+          {friends.length > 0 && (
+            <div>
+              <Label className="flex items-center gap-1"><Users className="w-3 h-3" /> Participants</Label>
+              <div className="flex flex-wrap gap-2 mt-1">
+                {friends.map(f => {
+                  const selected = form.participant_ids.includes(f.id);
+                  return (
+                    <button
+                      key={f.id}
+                      type="button"
+                      onClick={() => setForm(prev => ({
+                        ...prev,
+                        participant_ids: selected
+                          ? prev.participant_ids.filter(x => x !== f.id)
+                          : [...prev.participant_ids, f.id],
+                      }))}
+                      className={cn(
+                        'px-3 py-1.5 rounded-full text-xs font-medium border transition-all',
+                        selected
+                          ? 'bg-[var(--primary)]/20 border-[var(--primary)] text-[var(--primary)]'
+                          : 'border-[var(--border)] text-[var(--foreground-muted)] hover:border-[var(--card-border-hover)]'
+                      )}
+                    >
+                      {selected ? '✓ ' : ''}{f.name}
+                    </button>
+                  );
+                })}
+              </div>
+              {form.participant_ids.length > 0 && (
+                <p className="text-xs text-[var(--foreground-muted)] mt-1">{form.participant_ids.length} selected</p>
+              )}
+            </div>
+          )}
 
           <div>
             <Label>Pre-meeting notes / agenda</Label>

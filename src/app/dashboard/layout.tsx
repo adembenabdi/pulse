@@ -10,9 +10,10 @@ import {
   LayoutDashboard, Calendar, CalendarDays, CheckSquare, Moon, Dumbbell, UtensilsCrossed,
   BookOpen, Code, Briefcase, GraduationCap, Wallet, Target, BookHeart,
   PenLine, Settings, LogOut, Sun, MoonStar, ChevronLeft, ChevronRight,
-  Menu, X, Sparkles, User, Lightbulb, Users, BookOpenCheck, BarChart3, Timer, Library, Handshake
+  Menu, X, Sparkles, User, Lightbulb, Users, BookOpenCheck, BarChart3, Timer, Library, Handshake, BedDouble
 } from 'lucide-react';
 import AssistantWidget from '@/components/AssistantWidget';
+import QuickCapture from '@/components/QuickCapture';
 
 const NAV_SECTIONS = [
   {
@@ -23,6 +24,7 @@ const NAV_SECTIONS = [
       { href: '/dashboard/quran', icon: BookOpenCheck, label: 'Quran' },
       { href: '/dashboard/sport', icon: Dumbbell, label: 'Sport' },
       { href: '/dashboard/meals', icon: UtensilsCrossed, label: 'Meals' },
+      { href: '/dashboard/sleep', icon: BedDouble, label: 'Sleep' },
       { href: '/dashboard/learning', icon: BookOpen, label: 'Learning' },
     ],
   },
@@ -249,6 +251,9 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
 
       {/* AI Assistant */}
       <AssistantWidget />
+
+      {/* Quick Capture FAB */}
+      <QuickCapture />
     </div>
   );
 }
