@@ -6,7 +6,7 @@ import { useAuth } from '@/context/AuthContext';
 import { Card, Badge, Button, PageHeader, Input, TextArea, Label, Select, Modal, cn } from '@/components/ui/primitives';
 import {
   CalendarDays, ChevronLeft, ChevronRight, Plus, Trash2, Clock, MapPin,
-  Star, Flag, Moon, Heart, Briefcase, Users, GraduationCap, Sparkles, X, GripVertical,
+  Star, Flag, Moon, Heart, Briefcase, Users, GraduationCap, Sparkles, X, GripVertical, Bell,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useUndoDelete } from '@/hooks/useUndoDelete';
@@ -22,6 +22,8 @@ interface CalendarEvent {
   color?: string | null;
   description: string;
   all_day: boolean;
+  reminder_at?: string | null;
+  reminder_sent?: boolean;
   isHoliday?: boolean; // virtual — not stored in DB
 }
 
@@ -106,6 +108,7 @@ export default function CalendarPage() {
   const [form, setForm] = useState({
     title: '', date: '', start_time: '', end_time: '',
     category: 'personal', color: '', description: '', all_day: true,
+    reminder: 'none' as string,
   });
 
   // Drag state for event rescheduling
@@ -256,6 +259,21 @@ export default function CalendarPage() {
 
   const handleSave = async () => {
     if (!form.title.trim() || !form.date) return;
+
+    // Compute reminder_at from the selected option
+    let reminder_at: string | null = null;
+    if (form.reminder !== 'none') {
+      const baseTime = !form.all_day && form.start_time
+        ? `${form.date}T${form.start_time}:00`
+        : `${form.date}T09:00:00`;
+      const baseDate = new Date(baseTime);
+      const minutesBefore = parseInt(form.reminder, 10);
+      if (!isNaN(minutesBefore)) {
+        baseDate.setMinutes(baseDate.getMinutes() - minutesBefore);
+        reminder_at = baseDate.toISOString();
+      }
+    }
+
     const payload = {
       title: form.title.trim(),
       date: form.date,
@@ -265,6 +283,7 @@ export default function CalendarPage() {
       color: EVENT_CATEGORIES[form.category]?.color || '#A855F7',
       description: form.description.trim(),
       all_day: form.all_day,
+      reminder_at,
     };
     try {
       await api.calendar.create(payload);
@@ -299,7 +318,7 @@ export default function CalendarPage() {
   };
 
   const resetForm = () => {
-    setForm({ title: '', date: '', start_time: '', end_time: '', category: 'personal', color: '', description: '', all_day: true });
+    setForm({ title: '', date: '', start_time: '', end_time: '', category: 'personal', color: '', description: '', all_day: true, reminder: 'none' });
   };
 
   const openAddForDate = (dateStr: string) => {
@@ -591,6 +610,13 @@ export default function CalendarPage() {
                             {e.description && (
                               <p className="text-xs text-[var(--foreground-muted)] mt-1 line-clamp-2">{e.description}</p>
                             )}
+                            {e.reminder_at && (
+                              <p className="text-xs text-[var(--foreground-muted)] mt-0.5 flex items-center gap-1">
+                                <Bell className="w-3 h-3" />
+                                Reminder: {new Date(e.reminder_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                {e.reminder_sent && ' ✓'}
+                              </p>
+                            )}
                           </div>
                           {!e.isHoliday && (
                             <Button variant="ghost" size="icon" onClick={() => handleDelete(e.id)}
@@ -720,6 +746,29 @@ export default function CalendarPage() {
           <div>
             <Label>Description</Label>
             <TextArea placeholder="Optional details..." value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} rows={2} />
+          </div>
+
+          {/* Reminder */}
+          <div>
+            <Label><Bell className="w-3 h-3 inline mr-1" />Reminder</Label>
+            <Select value={form.reminder} onChange={e => setForm(f => ({ ...f, reminder: e.target.value }))}>
+              <option value="none">No reminder</option>
+              <option value="0">At time of event</option>
+              <option value="5">5 minutes before</option>
+              <option value="10">10 minutes before</option>
+              <option value="15">15 minutes before</option>
+              <option value="30">30 minutes before</option>
+              <option value="60">1 hour before</option>
+              <option value="120">2 hours before</option>
+              <option value="1440">1 day before</option>
+            </Select>
+            {form.reminder !== 'none' && (
+              <p className="text-[10px] text-[var(--foreground-muted)] mt-1">
+                {form.all_day && !form.start_time
+                  ? 'Reminder based on 9:00 AM (set a start time for more precision)'
+                  : 'You\u2019ll get a Telegram notification'}
+              </p>
+            )}
           </div>
 
           {/* Category color preview */}
