@@ -392,4 +392,26 @@ export const api = {
         '/resources/extract', { method: 'POST', body: JSON.stringify({ url }) }
       ),
   },
+
+  // ── Meetings ──
+  meetings: {
+    get: (status?: string) => request<Record<string, unknown>[]>(`/meetings${status ? `?status=${status}` : ''}`),
+    getById: (id: string) => request<Record<string, unknown>>(`/meetings/${id}`),
+    create: (data: Record<string, unknown>) =>
+      request<Record<string, unknown>>('/meetings', { method: 'POST', body: JSON.stringify(data) }),
+    update: (id: string, data: Record<string, unknown>) =>
+      request<Record<string, unknown>>(`/meetings/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    delete: (id: string) => request<{ message: string }>(`/meetings/${id}`, { method: 'DELETE' }),
+    restore: (id: string) => request<Record<string, unknown>>(`/meetings/${id}/restore`, { method: 'POST' }),
+    processReport: (id: string) =>
+      request<{ summary: string; tasks: Record<string, unknown>[] }>(`/meetings/${id}/process-report`, { method: 'POST' }),
+    tasks: {
+      get: (meetingId: string) => request<Record<string, unknown>[]>(`/meetings/${meetingId}/tasks`),
+      create: (meetingId: string, title: string, source?: string) =>
+        request<Record<string, unknown>>(`/meetings/${meetingId}/tasks`, { method: 'POST', body: JSON.stringify({ title, source }) }),
+      update: (taskId: string, data: Record<string, unknown>) =>
+        request<Record<string, unknown>>(`/meetings/tasks/${taskId}`, { method: 'PUT', body: JSON.stringify(data) }),
+      delete: (taskId: string) => request<{ message: string }>(`/meetings/tasks/${taskId}`, { method: 'DELETE' }),
+    },
+  },
 };

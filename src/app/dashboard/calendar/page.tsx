@@ -122,6 +122,7 @@ export default function CalendarPage() {
   const [islamicHolidays, setIslamicHolidays] = useState<CalendarEvent[]>([]);
   const [friendBirthdays, setFriendBirthdays] = useState<CalendarEvent[]>([]);
   const [studyExams, setStudyExams] = useState<CalendarEvent[]>([]);
+  const [calendarMeetings, setCalendarMeetings] = useState<CalendarEvent[]>([]);
 
   const [form, setForm] = useState({
     title: '', date: '', start_time: '', end_time: '',
@@ -266,6 +267,29 @@ export default function CalendarPage() {
     return () => { cancelled = true; };
   }, [user]);
 
+  // Fetch meetings for calendar
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    api.meetings.get().then(data => {
+      if (cancelled) return;
+      const STATUS_COLORS: Record<string, string> = { upcoming: '#3B82F6', completed: '#10B981', cancelled: '#6B7280' };
+      setCalendarMeetings((data as unknown as { id: string; title: string; date: string; start_time?: string; end_time?: string; location?: string; status: string }[]).map(m => ({
+        id: `meeting-${m.id}`,
+        title: `🤝 ${m.title}`,
+        date: m.date,
+        start_time: m.start_time || null,
+        end_time: m.end_time || null,
+        category: 'personal',
+        color: STATUS_COLORS[m.status] || '#3B82F6',
+        description: m.location ? `📍 ${(LOCATION_OPTIONS[m.location] || { label: m.location }).label}` : '',
+        all_day: !m.start_time,
+        isHoliday: true, // prevents editing via calendar UI (edit in meetings page)
+      })));
+    }).catch(() => { /* silent */ });
+    return () => { cancelled = true; };
+  }, [user]);
+
   const holidays = useMemo(() => getBuiltInHolidays(currentYear), [currentYear]);
 
   // Merge user events + static holidays + Islamic holidays + birthdays + exams
@@ -291,8 +315,13 @@ export default function CalendarPage() {
         merged.push(e);
       }
     });
+    calendarMeetings.forEach(m => {
+      if (m.date.startsWith(monthStr)) {
+        merged.push(m);
+      }
+    });
     return merged.filter(e => activeFilters.has(e.category));
-  }, [events, holidays, islamicHolidays, friendBirthdays, studyExams, monthStr, activeFilters]);
+  }, [events, holidays, islamicHolidays, friendBirthdays, studyExams, calendarMeetings, monthStr, activeFilters]);
 
   const eventsByDate = useMemo(() => {
     const map: Record<string, CalendarEvent[]> = {};
