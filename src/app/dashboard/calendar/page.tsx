@@ -7,6 +7,7 @@ import { Card, Badge, Button, PageHeader, Input, TextArea, Label, Select, Modal,
 import {
   CalendarDays, ChevronLeft, ChevronRight, Plus, Trash2, Clock, MapPin,
   Star, Flag, Moon, Heart, Briefcase, Users, GraduationCap, Sparkles, X, GripVertical, Bell,
+  CheckSquare, Square, ListTodo,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useUndoDelete } from '@/hooks/useUndoDelete';
@@ -22,10 +23,27 @@ interface CalendarEvent {
   color?: string | null;
   description: string;
   all_day: boolean;
+  location?: string | null;
   reminder_at?: string | null;
   reminder_sent?: boolean;
   isHoliday?: boolean; // virtual — not stored in DB
 }
+
+interface EventTask {
+  id: string;
+  event_id: string;
+  title: string;
+  completed: boolean;
+}
+
+const LOCATION_OPTIONS: Record<string, { label: string; icon: string }> = {
+  local: { label: 'Local', icon: '🏠' },
+  faculty: { label: 'Faculty', icon: '🏫' },
+  discord: { label: 'Discord', icon: '💬' },
+  online: { label: 'Online', icon: '🌐' },
+  cafe: { label: 'Café', icon: '☕' },
+  other: { label: 'Other', icon: '📍' },
+};
 
 // ── Event categories ──
 const EVENT_CATEGORIES: Record<string, { label: string; icon: React.ReactNode; color: string }> = {
@@ -108,12 +126,58 @@ export default function CalendarPage() {
   const [form, setForm] = useState({
     title: '', date: '', start_time: '', end_time: '',
     category: 'personal', color: '', description: '', all_day: true,
-    reminder: 'none' as string,
+    reminder: 'none' as string, location: '' as string,
   });
+  const [formTasks, setFormTasks] = useState<string[]>([]);
+  const [newTaskTitle, setNewTaskTitle] = useState('');
 
   // Drag state for event rescheduling
   const [dragEventId, setDragEventId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
+
+  // Event tasks for detail view
+  const [eventTasks, setEventTasks] = useState<Record<string, EventTask[]>>({});
+  const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
+  const [inlineTaskTitle, setInlineTaskTitle] = useState('');
+
+  const loadEventTasks = useCallback(async (eventId: string) => {
+    try {
+      const data = await api.calendar.tasks.get(eventId) as unknown as EventTask[];
+      setEventTasks(prev => ({ ...prev, [eventId]: data }));
+    } catch { /* silent */ }
+  }, []);
+
+  const toggleEventExpand = (eventId: string) => {
+    if (expandedEventId === eventId) {
+      setExpandedEventId(null);
+    } else {
+      setExpandedEventId(eventId);
+      if (!eventTasks[eventId]) loadEventTasks(eventId);
+    }
+  };
+
+  const toggleEventTask = async (taskId: string, eventId: string, completed: boolean) => {
+    try {
+      await api.calendar.tasks.update(taskId, { completed: !completed });
+      await loadEventTasks(eventId);
+    } catch { /* silent */ }
+  };
+
+  const addInlineTask = async (eventId: string) => {
+    if (!inlineTaskTitle.trim()) return;
+    try {
+      await api.calendar.tasks.create(eventId, inlineTaskTitle.trim());
+      setInlineTaskTitle('');
+      await loadEventTasks(eventId);
+    } catch { /* silent */ }
+  };
+
+  const deleteEventTask = async (taskId: string, eventId: string) => {
+    try {
+      await api.calendar.tasks.delete(taskId);
+      await loadEventTasks(eventId);
+    } catch { /* silent */ }
+  };
 
   const monthStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}`;
 
@@ -283,10 +347,17 @@ export default function CalendarPage() {
       color: EVENT_CATEGORIES[form.category]?.color || '#A855F7',
       description: form.description.trim(),
       all_day: form.all_day,
+      location: form.location || null,
       reminder_at,
     };
     try {
-      await api.calendar.create(payload);
+      const created = await api.calendar.create(payload) as unknown as CalendarEvent;
+      // Create linked tasks
+      for (const taskTitle of formTasks) {
+        if (taskTitle.trim()) {
+          await api.calendar.tasks.create(created.id, taskTitle.trim());
+        }
+      }
       await loadEvents();
       setShowAdd(false);
       resetForm();
@@ -318,7 +389,9 @@ export default function CalendarPage() {
   };
 
   const resetForm = () => {
-    setForm({ title: '', date: '', start_time: '', end_time: '', category: 'personal', color: '', description: '', all_day: true, reminder: 'none' });
+    setForm({ title: '', date: '', start_time: '', end_time: '', category: 'personal', color: '', description: '', all_day: true, reminder: 'none', location: '' });
+    setFormTasks([]);
+    setNewTaskTitle('');
   };
 
   const openAddForDate = (dateStr: string) => {
@@ -577,52 +650,116 @@ export default function CalendarPage() {
                         onDragEnd={() => setDragEventId(null)}
                       >
                         <div
-                          className="flex items-start gap-3 p-3 rounded-xl border backdrop-blur-sm transition-all hover:scale-[1.01]"
+                          className="p-3 rounded-xl border backdrop-blur-sm transition-all hover:scale-[1.01] cursor-pointer"
                           style={{
                             backgroundColor: `${col}08`,
                             borderColor: `${col}20`,
                             boxShadow: `0 2px 12px ${col}08`,
                           }}
+                          onClick={() => !e.isHoliday && toggleEventExpand(e.id)}
                         >
-                          {/* Color dot */}
-                          {!e.isHoliday && (
-                            <GripVertical className="w-3 h-3 text-[var(--foreground-muted)] opacity-0 group-hover:opacity-50 cursor-grab flex-shrink-0" />
-                          )}
-                          <div
-                            className="w-3 h-3 rounded-full flex-shrink-0 mt-1"
-                            style={{ backgroundColor: col, boxShadow: `0 0 8px ${col}40` }}
-                          />
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <p className="text-sm font-bold text-[var(--foreground)]">
-                                {e.isHoliday && '✦ '}{e.title}
-                              </p>
-                              <Badge variant="outline" size="sm" style={{ borderColor: `${col}40`, color: col }}>
-                                {cat?.icon} {cat?.label}
-                              </Badge>
+                          <div className="flex items-start gap-3">
+                            {/* Color dot */}
+                            {!e.isHoliday && (
+                              <GripVertical className="w-3 h-3 text-[var(--foreground-muted)] opacity-0 group-hover:opacity-50 cursor-grab flex-shrink-0" />
+                            )}
+                            <div
+                              className="w-3 h-3 rounded-full flex-shrink-0 mt-1"
+                              style={{ backgroundColor: col, boxShadow: `0 0 8px ${col}40` }}
+                            />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <p className="text-sm font-bold text-[var(--foreground)]">
+                                  {e.isHoliday && '✦ '}{e.title}
+                                </p>
+                                <Badge variant="outline" size="sm" style={{ borderColor: `${col}40`, color: col }}>
+                                  {cat?.icon} {cat?.label}
+                                </Badge>
+                              </div>
+                              {!e.all_day && e.start_time && (
+                                <p className="text-xs text-[var(--foreground-muted)] mt-0.5 flex items-center gap-1">
+                                  <Clock className="w-3 h-3" />
+                                  {e.start_time}{e.end_time ? ` — ${e.end_time}` : ''}
+                                </p>
+                              )}
+                              {e.location && (
+                                <p className="text-xs text-[var(--foreground-muted)] mt-0.5 flex items-center gap-1">
+                                  <MapPin className="w-3 h-3" />
+                                  {LOCATION_OPTIONS[e.location]?.icon || '📍'} {LOCATION_OPTIONS[e.location]?.label || e.location}
+                                </p>
+                              )}
+                              {e.description && (
+                                <p className="text-xs text-[var(--foreground-muted)] mt-1 line-clamp-2">{e.description}</p>
+                              )}
+                              {e.reminder_at && (
+                                <p className="text-xs text-[var(--foreground-muted)] mt-0.5 flex items-center gap-1">
+                                  <Bell className="w-3 h-3" />
+                                  Reminder: {new Date(e.reminder_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                  {e.reminder_sent && ' ✓'}
+                                </p>
+                              )}
                             </div>
-                            {!e.all_day && e.start_time && (
-                              <p className="text-xs text-[var(--foreground-muted)] mt-0.5 flex items-center gap-1">
-                                <Clock className="w-3 h-3" />
-                                {e.start_time}{e.end_time ? ` — ${e.end_time}` : ''}
-                              </p>
-                            )}
-                            {e.description && (
-                              <p className="text-xs text-[var(--foreground-muted)] mt-1 line-clamp-2">{e.description}</p>
-                            )}
-                            {e.reminder_at && (
-                              <p className="text-xs text-[var(--foreground-muted)] mt-0.5 flex items-center gap-1">
-                                <Bell className="w-3 h-3" />
-                                Reminder: {new Date(e.reminder_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                                {e.reminder_sent && ' ✓'}
-                              </p>
+                            {!e.isHoliday && (
+                              <div className="flex items-center gap-1">
+                                <Button variant="ghost" size="icon" onClick={(ev) => { ev.stopPropagation(); toggleEventExpand(e.id); }}
+                                  className="opacity-60 hover:opacity-100 transition-opacity">
+                                  <ListTodo className="w-3.5 h-3.5 text-[var(--foreground-muted)]" />
+                                </Button>
+                                <Button variant="ghost" size="icon" onClick={(ev) => { ev.stopPropagation(); handleDelete(e.id); }}
+                                  className="opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <Trash2 className="w-3.5 h-3.5 text-[var(--danger)]" />
+                                </Button>
+                              </div>
                             )}
                           </div>
-                          {!e.isHoliday && (
-                            <Button variant="ghost" size="icon" onClick={() => handleDelete(e.id)}
-                              className="opacity-0 group-hover:opacity-100 transition-opacity">
-                              <Trash2 className="w-3.5 h-3.5 text-[var(--danger)]" />
-                            </Button>
+
+                          {/* Expandable tasks section */}
+                          {expandedEventId === e.id && !e.isHoliday && (
+                            <motion.div
+                              initial={{ height: 0, opacity: 0 }}
+                              animate={{ height: 'auto', opacity: 1 }}
+                              className="mt-3 pt-3 border-t border-[var(--border)]/30"
+                              onClick={ev => ev.stopPropagation()}
+                            >
+                              <p className="text-[10px] font-semibold text-[var(--foreground-muted)] uppercase mb-2">Tasks to do</p>
+                              <div className="space-y-1.5">
+                                {(eventTasks[e.id] || []).map(task => (
+                                  <div key={task.id} className="flex items-center gap-2 group/task">
+                                    <button onClick={() => toggleEventTask(task.id, e.id, task.completed)}>
+                                      {task.completed
+                                        ? <CheckSquare className="w-3.5 h-3.5 text-[var(--success)]" />
+                                        : <Square className="w-3.5 h-3.5 text-[var(--foreground-muted)]" />}
+                                    </button>
+                                    <span className={cn('text-xs flex-1', task.completed && 'line-through text-[var(--foreground-muted)]')}>
+                                      {task.title}
+                                    </span>
+                                    <button
+                                      onClick={() => deleteEventTask(task.id, e.id)}
+                                      className="opacity-0 group-hover/task:opacity-100 text-[var(--danger)] transition-opacity"
+                                    >
+                                      <X className="w-3 h-3" />
+                                    </button>
+                                  </div>
+                                ))}
+                                {(eventTasks[e.id] || []).length === 0 && (
+                                  <p className="text-[10px] text-[var(--foreground-muted)]">No tasks yet</p>
+                                )}
+                                <div className="flex items-center gap-2 mt-1">
+                                  <Input
+                                    placeholder="Add task..."
+                                    value={inlineTaskTitle}
+                                    onChange={ev => setInlineTaskTitle(ev.target.value)}
+                                    onKeyDown={ev => {
+                                      if (ev.key === 'Enter') { ev.preventDefault(); addInlineTask(e.id); }
+                                    }}
+                                    className="flex-1 !text-xs !py-1"
+                                  />
+                                  <Button variant="secondary" size="sm" onClick={() => addInlineTask(e.id)} disabled={!inlineTaskTitle.trim()}>
+                                    <Plus className="w-3 h-3" />
+                                  </Button>
+                                </div>
+                              </div>
+                            </motion.div>
                           )}
                         </div>
                       </motion.div>
@@ -748,6 +885,27 @@ export default function CalendarPage() {
             <TextArea placeholder="Optional details..." value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} rows={2} />
           </div>
 
+          {/* Location */}
+          <div>
+            <Label><MapPin className="w-3 h-3 inline mr-1" />Location</Label>
+            <div className="flex flex-wrap gap-2 mt-1">
+              {Object.entries(LOCATION_OPTIONS).map(([key, loc]) => (
+                <button
+                  key={key}
+                  onClick={() => setForm(f => ({ ...f, location: f.location === key ? '' : key }))}
+                  className={cn(
+                    'inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border',
+                    form.location === key
+                      ? 'bg-[var(--primary)]/15 border-[var(--primary)]/30 text-[var(--primary)]'
+                      : 'border-[var(--border)] text-[var(--foreground-muted)] hover:border-[var(--primary)]/20'
+                  )}
+                >
+                  {loc.icon} {loc.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Reminder */}
           <div>
             <Label><Bell className="w-3 h-3 inline mr-1" />Reminder</Label>
@@ -769,6 +927,52 @@ export default function CalendarPage() {
                   : 'You\u2019ll get a Telegram notification'}
               </p>
             )}
+          </div>
+
+          {/* Tasks to do before this event */}
+          <div>
+            <Label><ListTodo className="w-3 h-3 inline mr-1" />Tasks before this event</Label>
+            <div className="space-y-1.5 mt-1">
+              {formTasks.map((task, idx) => (
+                <div key={idx} className="flex items-center gap-2">
+                  <span className="text-xs text-[var(--foreground)] flex-1 bg-[var(--background-surface)] rounded-lg px-3 py-1.5">{task}</span>
+                  <button
+                    onClick={() => setFormTasks(t => t.filter((_, i) => i !== idx))}
+                    className="text-[var(--danger)] hover:bg-[var(--danger)]/10 rounded p-1 transition-colors"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+              <div className="flex items-center gap-2">
+                <Input
+                  placeholder="Add a task..."
+                  value={newTaskTitle}
+                  onChange={e => setNewTaskTitle(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && newTaskTitle.trim()) {
+                      e.preventDefault();
+                      setFormTasks(t => [...t, newTaskTitle.trim()]);
+                      setNewTaskTitle('');
+                    }
+                  }}
+                  className="flex-1"
+                />
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    if (newTaskTitle.trim()) {
+                      setFormTasks(t => [...t, newTaskTitle.trim()]);
+                      setNewTaskTitle('');
+                    }
+                  }}
+                  disabled={!newTaskTitle.trim()}
+                >
+                  <Plus className="w-3 h-3" />
+                </Button>
+              </div>
+            </div>
           </div>
 
           {/* Category color preview */}

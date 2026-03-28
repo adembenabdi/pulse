@@ -310,6 +310,14 @@ export const api = {
       request<{ date: string; title: string }[]>(`/calendar/islamic?year=${year}`),
     birthdays: (year: number) =>
       request<{ date: string; title: string; relationship: string; friendId: string }[]>(`/calendar/birthdays?year=${year}`),
+    tasks: {
+      get: (eventId: string) => request<Record<string, unknown>[]>(`/calendar/${eventId}/tasks`),
+      create: (eventId: string, title: string) =>
+        request<Record<string, unknown>>(`/calendar/${eventId}/tasks`, { method: 'POST', body: JSON.stringify({ title }) }),
+      update: (taskId: string, data: Record<string, unknown>) =>
+        request<Record<string, unknown>>(`/calendar/tasks/${taskId}`, { method: 'PUT', body: JSON.stringify(data) }),
+      delete: (taskId: string) => request<{ message: string }>(`/calendar/tasks/${taskId}`, { method: 'DELETE' }),
+    },
   },
 
   // ── Learning (restore) ──
